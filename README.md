@@ -236,4 +236,4 @@ java -cp target/classes;target/test-classes br.unisul.mercadao.TesteSistema
    - **Resumo** financeiro (estimado × gasto)
    - **Sair**
 
-> Os dados **não são salvos**: ao fechar o programa, a lista é perdida (requisito do enunciado).
+> Os dados **não são salvos**: ao fechar o programa, a lista é perdida.
