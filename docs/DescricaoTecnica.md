@@ -1,0 +1,323 @@
+# Descrição Técnica - Mercadão Unisul (Lista de Compras de Supermercado)
+
+## 1. Visão geral
+
+O sistema gerencia **uma única lista de compras** durante a execução. Permite cadastrar, consultar, localizar, editar e remover produtos, registrar compras **parciais** e **totais** e apresentar produtos adquiridos, pendentes e os valores **estimados** e **gastos**.
+
+- Linguagem: Java 24, Maven, **sem dependências externas**.
+- Dados **somente em memória** (nenhum arquivo, banco de dados ou serialização).
+- Interface: Swing com **todas as telas dentro de `JOptionPane`** (menu em grade de botões com ícones, formulários, listas e tabelas), ícones carregados de arquivos PNG (`src/main/resources/icones`), sem leitura de console.
+- Textos: todo texto visível vem do arquivo `i18n/mensagens_pt_BR.properties`, acessado pela classe `I18n`. O arquivo é somente ASCII: caracteres especiais usam sequências Unicode (`ã` para "ã"), o que garante a mesma leitura em qualquer sistema e codificação.
+- As estruturas de dados foram **implementadas pela equipe** (lista duplamente encadeada e árvore binária de busca). Não há vetores, matrizes nem coleções prontas da biblioteca padrão no código do sistema (a única exceção é o `String[] args` exigido pela assinatura do `main`). O pacote `java.util` só é importado pela classe `I18n` (ver seção 4.5).
+- Dinheiro e quantidades usam `BigDecimal` (nunca `double`/`float`).
+
+## 2. Como executar
+
+**IntelliJ IDEA:** abrir a pasta do projeto, usar o JDK 24 (Corretto 24) e executar a classe `br.unisul.mercadao.Main`.
+
+**Linha de comando (sem Maven):**
+
+```bash
+mkdir out
+javac -encoding UTF-8 -d out $(find src/main/java -name '*.java')
+cp -r src/main/resources/* out/      # arquivo de mensagens (i18n)
+java -cp out br.unisul.mercadao.Main
+```
+
+**Com Maven:** `mvn package` e depois `java -jar target/mercadao-1.0-SNAPSHOT.jar` (o `pom.xml` define a classe principal no manifesto).
+
+**Testes (sem JUnit):**
+
+```bash
+javac -Xlint:all -encoding UTF-8 -d out-test $(find src/main/java src/test/java -name '*.java')
+cp -r src/main/resources/* out-test/
+java -cp out-test br.unisul.mercadao.TesteSistema
+```
+
+## 3. Arquitetura em camadas (MVC + service)
+
+```
+br.unisul.mercadao
+|-- Main                  inicia: aplica o look and feel e chama o controller
+|-- controller/           MenuController            -> fluxo: recebe a escolha da view, chama o service,
+|                                                      abre a próxima view e trata RegraNegocioException
+|-- view/                 TelaBoasVindas, MenuPrincipalView, ConsultaView,
+|                         FormularioProdutoView, FormularioCompraView, SeletorProdutoView,
+|                         RelatorioView, ResumoView, ProdutoTableModel,
+|                         Dialogos, Componentes, Icones, Cores, OpcaoMenu, OpcaoConsulta
+|                                                    -> telas Swing (tudo em JOptionPane); sem regra de negócio
+|                                                       Dialogos = abrir/fechar diálogos e mensagens
+|                                                       Componentes = fábrica de componentes (botão de menu, linha de
+|                                                       formulário, barra de progresso, total digitado ao vivo)
+|-- service/              ListaComprasService       -> regras de negócio e sincronização das estruturas
+|                         DadosExemplo              -> produtos de exemplo para a demonstração
+|-- model/                Produto, StatusProduto, ResumoFinanceiro
+|                                                    -> dados e cálculos derivados
+|-- exception/            RegraNegocioException     -> erro de regra com mensagem amigável
+|-- structure/            ListaDuplamenteEncadeada, ArvoreBinariaBusca, Filtro, Acao
+|                                                    -> estruturas próprias e genéricas (não conhecem Produto)
+|-- util/                 Texto, Formatador, Conversor
+|                                                    -> normalização de nomes, formatação e conversão de números digitados
+`-- i18n/                 I18n                      -> textos do arquivo mensagens_pt_BR.properties
+
+src/main/resources/i18n/mensagens_pt_BR.properties
+src/main/resources/icones/*.png
+src/test/java/br/unisul/mercadao/TesteSistema.java
+```
+
+**Regras de dependência:**
+
+| Camada | Pode usar | Não pode usar |
+|---|---|---|
+| `view` | `model`, `structure`, `util`, `i18n`, Swing | `service`, `controller` (a view só recebe dados e devolve a entrada digitada) |
+| `controller` | `view`, `service`, `model`, `structure`, `util`, `exception`, `i18n` | Swing diretamente |
+| `service` | `model`, `structure`, `exception`, `util`, `i18n` | Swing (`javax.swing`, `java.awt`) |
+| `model` | `i18n` (descrição do status) | `service`, `view`, `controller`, Swing |
+| `structure` | somente `java.lang` | `model` e qualquer outra camada (é genérica) |
+
+O fluxo de uma ação é: a `view` mostra a tela e devolve ao `controller` o que o usuário escolheu ou digitou (por exemplo uma `OpcaoMenu` ou os textos dos campos); o `controller` converte os textos (`Conversor`), chama o `service`, e abre a próxima `view` com o resultado; se o `service` lançar `RegraNegocioException`, o `controller` mostra a mensagem em `Dialogos.erro` e reabre o formulário com o que foi digitado.
+
+**Ícones:** ficam em `src/main/resources/icones/*.png` (48 x 48, fundo transparente, nomes em minúsculo com `_`, por exemplo `cadastrar.png`, `compra_parcial.png`, `status_parcial.png`). A classe `view.Icones` apenas os carrega com `new ImageIcon(Icones.class.getResource("/icones/" + nome + ".png"))`; os tamanhos 16, 20, 24 (botões) são obtidos com `Image.SCALE_SMOOTH`. Se um arquivo não existir, o ícone fica vazio (transparente) e o sistema continua funcionando. Os PNGs foram gerados uma única vez a partir do desenho original feito em código, para manter o visual aprovado.
+
+## 4. Estruturas de dados escolhidas
+
+### 4.1 Lista duplamente encadeada (`ListaDuplamenteEncadeada<T>`)
+
+**O que é:** sequência de nós; cada nó guarda o valor, a referência ao nó anterior e ao próximo. A lista guarda `inicio`, `fim` e `tamanho`.
+
+**Por que foi escolhida:**
+- A lista de compras cresce e diminui durante a execução. Uma lista encadeada tem **tamanho dinâmico**, sem precisar "estimar" capacidade.
+- Cadastrar um produto é **inserir no fim em O(1)** (temos a referência `fim`), preservando a **ordem de cadastro**.
+- Remover um produto do meio é só **religar o anterior ao próximo**, sem deslocar elementos. A ligação dupla permite religar os dois lados sem precisar guardar o "nó anterior" durante a busca.
+- Filtros (pendentes, adquiridos, seção, trecho de nome) são percursos simples em O(n).
+
+**Por que não vetor/matriz:** são proibidos pela especificação do trabalho e, além disso, exigiriam definir um tamanho fixo ou realocar e copiar o conteúdo quando cheios, e deslocar elementos a cada remoção no meio.
+
+### 4.2 Árvore binária de busca (`ArvoreBinariaBusca<K, V>`)
+
+**O que é:** árvore em que, para cada nó, as chaves da subárvore esquerda são menores e as da direita são maiores. É usada como **índice por nome**: a chave é o nome normalizado (sem acento, minúsculo, espaços colapsados) e o valor é a **referência ao mesmo objeto `Produto`** que está na lista.
+
+**Por que foi escolhida:**
+- **Busca por nome em O(log n) no caso médio**, em vez de varrer toda a lista.
+- **Garante nomes únicos:** `inserir` rejeita chave repetida, logo "Arroz", " arroz " e "ÁRROZ" são o mesmo produto.
+- **Ordem alfabética "de graça":** o percurso em ordem (esquerda, nó, direita) visita as chaves em ordem crescente, sem algoritmo de ordenação.
+- Remoção tratando os três casos clássicos: folha, um filho e dois filhos (substituição pelo sucessor em ordem).
+
+**Limitação conhecida (para a apresentação):** a árvore não é balanceada. No pior caso (cadastros em ordem alfabética estrita) ela degenera em uma lista e as operações passam a O(n). Para o volume de uma lista de compras isso é aceitável; uma árvore AVL ou rubro-negra resolveria, ao custo de maior complexidade de código.
+
+**Por que não vetor/matriz:** manter um vetor ordenado exigiria deslocar elementos a cada inserção/remoção (O(n)); uma matriz não representa bem o problema.
+
+### 4.3 Por que duas estruturas e não uma só?
+
+Cada uma resolve o que faz melhor: a lista mantém a ordem natural e suporta percursos e filtros; a árvore acelera a busca por nome e impõe unicidade. O custo é manter as duas **sincronizadas**, o que é feito no serviço (ver seção 6).
+
+### 4.4 Diagrama
+
+```
+   ListaDuplamenteEncadeada<Produto>          (ordem de cadastro)
+
+   inicio                                                      fim
+     |                                                          |
+     v                                                          v
+   +--------+  proximo   +--------+  proximo   +--------+  proximo
+   | No #1  | ---------> | No #2  | ---------> | No #3  | ---------> null
+   | Arroz  | <--------- | Leite  | <--------- | Banana | 
+   +---+----+  anterior  +---+----+  anterior  +---+----+
+       |                      |                    |
+       |  (mesmos objetos Produto, sem cópia)      |
+       v                      v                    v
+   +--------+             +--------+           +--------+
+   |Produto |             |Produto |           |Produto |
+   | id = 1 |             | id = 2 |           | id = 3 |
+   +--------+             +--------+           +--------+
+       ^                      ^                    ^
+       |                      |                    |
+       |            ArvoreBinariaBusca<String, Produto>  (chave = nome normalizado)
+       |                      |                    |
+       |                  [ "leite" ]              |
+       |                  /          \             |
+       |          [ "arroz" ]      [ "banana" ]    |
+       +----------------+              +-----------+
+```
+
+Os nós da lista e da árvore apontam para os **mesmos** objetos `Produto`. Alterar uma compra no objeto vale automaticamente para as duas visões.
+
+### 4.5 Exceção documentada: `java.util` apenas na classe `I18n`
+
+A regra do trabalho proíbe coleções e vetores prontos. A internacionalização padrão do Java, porém, depende de `ResourceBundle`, `Locale` e `MissingResourceException`, que ficam em `java.util`. Essas classes **não são estruturas de dados nem vetores**: apenas localizam e leem o arquivo `.properties`. Por isso a classe `I18n` é a **única** do sistema autorizada a importar `java.util`; todas as outras (incluindo as estruturas da lista de compras, o modelo da tabela e as telas) continuam sem nenhum import desse pacote. A API de `I18n` não usa `MessageFormat` nem varargs: tem sobrecargas `t(chave)`, `t(chave, a)`, `t(chave, a, b)` e `t(chave, a, b, c)` e faz a substituição de `{0}`, `{1}` e `{2}` à mão.
+
+## 5. Complexidade (Big-O)
+
+n = número de produtos; h = altura da árvore (médio ~ log n, pior caso n).
+
+| Operação | Estrutura usada | Complexidade |
+|---|---|---|
+| Cadastrar produto | árvore (verifica nome) + lista (insere no fim) | O(h), médio O(log n) |
+| Inserir no fim da lista | lista | O(1) |
+| Buscar por código | lista | O(n) |
+| Buscar por nome exato | árvore | O(h), médio O(log n) |
+| Buscar por trecho do nome | lista (filtro) | O(n) |
+| Listar por seção | lista (filtro) | O(n) |
+| Listar em ordem de cadastro | lista | O(n) |
+| Listar em ordem alfabética | árvore (percurso em ordem) | O(n) |
+| Listar adquiridos / pendentes | lista (filtro) | O(n) |
+| Editar (sem trocar nome) | lista (localiza por código) | O(n) |
+| Editar (trocando nome) | lista + árvore (remove e insere chave) | O(n + h) |
+| Remover produto | lista + árvore | O(n + h) |
+| Registrar compra parcial/total | lista (localiza por código) | O(n) |
+| Resumo financeiro | lista (percorre tudo) | O(n) |
+| Obter o i-ésimo elemento (`obter(int)`) | lista (percorre do início ou do fim, o que estiver mais perto) | O(n), no máximo n/2 saltos |
+| Tamanho / lista vazia | contador | O(1) |
+
+O método `obter(int)` existe para o modelo da tabela de relatórios (`ProdutoTableModel`): como a lista é encadeada, não há acesso direto por posição. Pintar uma tabela com n linhas e 11 colunas custa O(11 n^2) no total, desprezível para uma lista de compras; evitamos copiar os dados para uma coleção pronta ou vetor.
+
+### 5.1 Complexidade das operações das estruturas
+
+**`ListaDuplamenteEncadeada<T>`** (n = elementos; cada nó conhece o anterior e o próximo, e a lista guarda `inicio`, `fim` e `tamanho`):
+
+| Operação | Complexidade | Observação |
+|---|---|---|
+| `adicionarNoFim` | O(1) | a referência `fim` evita percorrer a lista |
+| `removerPrimeiro(filtro)` | O(n) para localizar, O(1) para religar | `desligar` trata os quatro casos: único, primeiro, último e do meio |
+| `buscarPrimeiro(filtro)` | O(n) | |
+| `filtrar(filtro)` | O(n) | a nova lista aponta para os mesmos objetos, sem cópia |
+| `copiar()` | O(n) | nova lista com os mesmos objetos, na mesma ordem |
+| `comUmElemento(valor)` | O(1) | fábrica estática usada para o resultado de buscas por código e nome exato |
+| `paraCada(acao)` | O(n) | percorre do início ao fim (ordem de cadastro) |
+| `obter(indice)` | O(n) | parte da extremidade mais próxima: no máximo n/2 saltos |
+| `tamanho`, `estaVazia` | O(1) | contador mantido a cada inserção e remoção |
+
+**`ArvoreBinariaBusca<K, V>`** (h = altura; no caso médio h é proporcional a log n, no pior caso, inserções em ordem já ordenada, h = n):
+
+| Operação | Complexidade | Observação |
+|---|---|---|
+| `inserir` | O(h), médio O(log n) | rejeita chave repetida |
+| `buscar`, `contem` | O(h), médio O(log n) | |
+| `remover` | O(h), médio O(log n) | três casos: folha, um filho (o filho ocupa o lugar) e dois filhos (o nó recebe os dados do sucessor, a menor chave da subárvore direita, que é removido da posição original) |
+| `emOrdem` | O(n) | esquerda, nó, direita: visita as chaves em ordem crescente |
+| `tamanho` | O(1) | |
+
+**`ListaComprasService`:** cadastrar O(h) pela árvore mais O(1) na lista; buscar por nome O(h), médio O(log n); buscar por código, trecho, seção, comprar, editar, remover e resumo O(n); listar em ordem alfabética O(n). As operações validam todos os dados antes de alterar qualquer estrutura e alteram lista e árvore na mesma operação. `Texto.normalizar` custa O(L), com L = tamanho do texto.
+
+A busca por código usa a lista (O(n)) porque o código é usado apenas na seleção de produtos; para listas de compras o custo é desprezível. Um índice por código seria uma melhoria possível, mas duplicaria a manutenção de estruturas sem ganho perceptível.
+
+## 6. Regras de negócio e consistência
+
+### 6.1 Modelo `Produto`
+
+Campos: `id` (sequencial a partir de 1, **nunca reutilizado**), `nome`, `secao`, `unidade`, `quantidadeDesejada`, `precoEstimadoUnitario`, `quantidadeComprada` (inicia 0) e `valorGasto` (inicia 0,00).
+
+Valores **derivados** (calculados, nunca guardados): quantidade pendente = desejada − comprada; valor estimado total; valor estimado pendente; valor estimado do comprado; status:
+
+| Condição | Status |
+|---|---|
+| comprada = 0 | PENDENTE |
+| 0 < comprada < desejada | PARCIAL |
+| comprada = desejada | COMPRADO |
+
+`quantidadeComprada` e `valorGasto` só mudam por `registrarCompra`, que soma a quantidade e `quantidade × preço pago` (arredondado em 2 casas, HALF_UP). Essa conta existe em um único lugar, `Produto.calcularValor`, reutilizado pelos valores estimados e pelo "total ao vivo" digitado nos formulários. `possuiCompra()` e `faltaComprar()` concentram os critérios usados pelas listagens de adquiridos e pendentes e pela regra de remoção.
+
+### 6.2 Validações (mensagens amigáveis em português)
+
+- Nome obrigatório, máx. 60 caracteres, **único** (comparação normalizada).
+- Seção obrigatória (máx. 30) e unidade obrigatória (máx. 10).
+- Quantidade desejada > 0 com no máximo 3 casas; preço estimado ≥ 0 com no máximo 2 casas.
+- Compra parcial: quantidade > 0 e ≤ pendente; preço pago ≥ 0; produto não pode estar COMPRADO.
+- Compra total: compra exatamente o pendente; o preço sugerido é o estimado, mas o usuário pode alterar.
+- Edição: a nova quantidade desejada não pode ser menor que a já comprada; nome continua único.
+- Remoção: só se nada foi comprado (preserva o valor gasto), com confirmação.
+
+### 6.3 Como a consistência é garantida
+
+1. **Validar antes de alterar:** toda operação valida todos os dados antes de mexer em qualquer estrutura, então nunca fica "meio atualizada".
+2. **Lista e árvore sincronizadas:** cadastrar insere nas duas; remover remove das duas; renomear remove a chave antiga e insere a nova na mesma operação.
+3. **Objetos compartilhados:** as duas estruturas guardam o mesmo `Produto`; não há cópias que possam divergir.
+4. **Totais nunca em cache:** `calcularResumo()` percorre a lista a cada chamada; é impossível um total ficar desatualizado.
+5. **`BigDecimal`:** sem erros de ponto flutuante; escala 2 para dinheiro, 3 para quantidade, `RoundingMode.HALF_UP`.
+6. **Encapsulamento:** quantidade comprada e valor gasto não possuem setters públicos.
+
+### 6.4 Resumo financeiro
+
+Total de itens (e quantos pendentes, parciais e comprados); **valor estimado total**; **valor gasto**; **estimado do que já foi comprado**; **diferença** (estimado do comprado − gasto; positivo = economia, negativo = excesso); **estimado restante**; **projeção final** (gasto + estimado restante); **percentual concluído** (itens totalmente comprados ÷ total).
+
+## 7. Decisões adicionais
+
+| Decisão | Justificativa |
+|---|---|
+| `BigDecimal` para dinheiro e quantidade | `double` não representa 0,1 exatamente; erros acumulariam nos totais |
+| Totais recalculados sempre | elimina inconsistência entre itens e totais |
+| Remoção bloqueada após compra | remover apagaria valor gasto e distorceria o resumo |
+| Nome normalizado como chave | "Arroz" e " ÁRROZ " são o mesmo produto; evita duplicatas |
+| Campo "seção" | permite **localizar** o item no supermercado (consulta por seção) |
+| Código sequencial nunca reutilizado | evita confundir produtos removidos com novos |
+| Editar e remover produto | cobre o requisito de "atualização" dos produtos |
+| Dados de exemplo (botão "Dados de exemplo") | facilita a demonstração e os testes manuais |
+| `JOptionPane` como contêiner de todas as telas | atende "interface simples" com visual rico (grade de botões, formulários, tabelas); cancelar volta ao menu sem alterar nada |
+| Ícones em arquivos PNG (`resources/icones`) | o código de desenho saiu das classes; `view.Icones` só carrega, escala com `SCALE_SMOOTH` e não derruba o app se faltar um arquivo |
+| Arquitetura MVC + service (`controller`, `view`, `service`, `model`, `structure`) | a view não conhece o service e o service não conhece Swing; cada camada tem uma responsabilidade |
+| Sem comentários no código | nomes descritivos e métodos curtos explicam o código; as explicações técnicas (complexidade, justificativas) ficam neste documento |
+| Todos os textos em `mensagens_pt_BR.properties` | internacionalização padrão do Java; facilita revisar e corrigir textos num só lugar |
+| Interfaces `Filtro` e `Acao` próprias | evita depender de classes prontas e deixa as estruturas genéricas |
+| Árvore recursiva e não balanceada | código mais simples de explicar; limitação documentada |
+
+### 7.1 Interface (JOptionPane com Swing)
+
+- **Contêiner único:** todo diálogo é um `JOptionPane` (criado em `view.Dialogos`; os componentes que vão dentro dele são montados por `view.Componentes`). O conteúdo (painéis, listas, tabelas) é passado como componente de mensagem; botões de menu fecham o painel com `pane.setValue(...)`. Os rótulos de rodapé ("Sair", "Voltar", "Fechar", "Começar") são trocados por `UIManager` só durante a criação de cada diálogo, sem usar vetor de opções.
+- **Ícone da janela:** `JOptionPane.setRootFrame(frame invisível)` com o ícone do aplicativo; todos os diálogos herdam. Look and feel do sistema operacional.
+- **Ícones:** `Icones` carrega os PNGs de `resources/icones` (quadrado arredondado colorido com símbolo branco) e os usa nos tamanhos 16, 20, 24 (botões), 48 (diálogos e boas-vindas). Há ícones de sucesso (check verde), erro (X vermelho), aviso, pergunta e de situação do produto (relógio, meio círculo, check).
+- **Boas-vindas** (nome do aplicativo, ícone grande e instrução) seguida do **menu principal**: grade 3 x 4 de botões com ícone, texto e dica (tooltip), mini-resumo (itens, gasto, falta estimada) e `JProgressBar` com o percentual de itens comprados. O botão de rodapé é "Sair"; fechar a janela também pede confirmação de saída.
+- **Consulta:** submenu no mesmo estilo (`ConsultaView`: código, nome exato, parte do nome, seção).
+- **Formulário único** de cadastro e edição (`FormularioProdutoView`): nome, seção e unidade (`JComboBox` editáveis com sugestões), quantidade, preço e "Valor estimado total" atualizado a cada tecla (`DocumentListener`). Em caso de erro de validação a mensagem é exibida e o formulário **reabre com os valores digitados**.
+- **Seleção de produto** (`SeletorProdutoView`): `JList` alimentada percorrendo a nossa lista, com filtro por texto, ícone de situação e "#código - nome - situação"; OK, Enter ou duplo clique confirmam.
+- **Compra** (`FormularioCompraView`): cartão com os dados do produto, campos quantidade e preço pago (padrão: o estimado) e "Total desta compra" ao vivo. Na compra total a quantidade fica travada no que falta.
+- **Relatórios:** `JTable` (`RelatorioView`) com `ProdutoTableModel` (estende `AbstractTableModel` e lê a nossa lista via `obter(int)`), coluna Status colorida com ícone, números à direita e rodapé de totais.
+- **Resumo financeiro** (`ResumoView`): valores em destaque, economia em verde ou excesso em vermelho e barra de progresso.
+- **Cancelar ou fechar** qualquer tela volta ao menu sem alterar nada (nunca há `NullPointerException`).
+
+### 7.2 Internacionalização (i18n)
+
+- Arquivo `src/main/resources/i18n/mensagens_pt_BR.properties` (somente ASCII, com acentos escritos como `\uXXXX`, sem comentários), somente pt-BR. Chaves agrupadas por prefixo (`app.*`, `menu.*`, `dica.*`, `consulta.*`, `form.*`, `selecao.*`, `compra.*`, `coluna.*`, `relatorio.*`, `resumo.*`, `status.*`, `erro.*`, `sucesso.*`, `aviso.*`, `confirmacao.*`, `exemplo.*`, `secao.*`, `unidade.*`, `formato.*`, `botao.*`, `titulo.*`, `campo.*`).
+- `I18n.t(chave...)` devolve o texto; chave inexistente devolve `!chave!` (fica visível na tela e nos testes).
+- Vêm do arquivo: textos da interface, mensagens de `RegraNegocioException`, descrições de `StatusProduto`, cabeçalhos de coluna, nomes dos dados de exemplo, textos padrão do `JOptionPane` (OK, Cancelar, Sim, Não) e símbolos de formatação (`R$`, separador decimal e de milhar).
+- Como o arquivo vai junto no `.jar`/`out`, ao compilar manualmente é preciso copiar `src/main/resources` para a pasta de saída (ver seção 2).
+
+## 8. Roteiro de demonstração (apresentação)
+
+1. Abrir o sistema. Mostrar a **tela de boas-vindas** e clicar em "Começar". No menu, mostrar o mini-resumo (itens: 0), a barra de progresso e passar o mouse sobre alguns botões para exibir as dicas.
+2. **Dados de exemplo** - carregar os 14 produtos. Clicar de novo: avisa que nenhum produto novo foi inserido (nomes já existem).
+3. **Listar (ordem de cadastro)** e **Listar (ordem alfabética)** - tabelas com status colorido e totais no rodapé. Comentar as duas estruturas (lista encadeada e percurso em ordem da árvore).
+4. **Cadastrar produto** - preencher "Sabão em pó" (Limpeza, un, 2, 12,50) e observar o "Valor estimado total" mudando ao digitar. Cadastrar de novo " SABÃO EM PÓ ": o erro de nome duplicado aparece e o formulário **reabre com os valores preenchidos**.
+5. **Consultar produto** - por código; por nome exato (sem acento, ex.: "cafe torrado"); por parte do nome ("leite"); por seção ("hortifruti").
+6. **Editar produto** - escolher "Tomate" na lista (usar o filtro e o duplo clique), aumentar a quantidade para 3 e renomear para "Tomate italiano". Consultar o nome antigo (não encontra) e o novo (encontra).
+7. **Compra parcial** - "Leite integral", 5 de 12 a R$ 5,20 (ver o "Total desta compra" ao vivo). Status vira Parcial. Nova compra parcial de 4. Tentar comprar 10 (excede o pendente) e mostrar a mensagem de erro com o formulário reaberto.
+8. **Compra total** - "Arroz 5kg": a quantidade vem travada; alterar o preço para 26,90. Status vira Comprado. O produto deixa de aparecer na seleção de compras.
+9. **Produtos adquiridos** (comprados e parciais, com quantidade e valor gasto) e **Produtos pendentes** (pendentes e parciais).
+10. **Resumo financeiro** - estimado total, gasto, economia (verde) ou excesso (vermelho), restante, projeção e barra de progresso. Conferir um número manualmente.
+11. **Remover produto** - tentar remover um já comprado (rejeitado, com explicação) e remover um sem compra (confirmação; some da lista e do índice).
+12. Mostrar o **cancelamento**: abrir um cadastro e clicar em Cancelar (volta ao menu, nada muda). Clicar em **Sair** e mostrar o aviso de que os dados serão perdidos.
+13. (Opcional) Executar `TesteSistema` com todas as verificações em OK.
+
+## 9. Mapeamento regra → funcionalidade
+
+| ID | Regra (Documentacao.md) | Onde é atendida |
+|---|---|---|
+| R1 | Cadastrar produtos | Botão "Cadastrar produto" → `ListaComprasService.cadastrar` |
+| R2 | Consultar e localizar itens | Botões de listagem e "Consultar produto" (código, nome exato, trecho, seção) |
+| R3 | Registrar compras totais | Botão "Compra total" → `ListaComprasService.comprarTotal` |
+| R4 | Registrar compras parciais | Botão "Compra parcial" → `ListaComprasService.comprar` (compras parciais acumulam) |
+| R5 | Informação de produtos adquiridos | Botão "Produtos adquiridos" (comprados e parciais, com quantidade e valor gasto) |
+| R6 | Informação de produtos pendentes | Botão "Produtos pendentes" (pendentes e parciais, com quantidade e valor estimado restante) |
+| R7 | Valores estimados e gastos | Botão "Resumo financeiro" e colunas dos relatórios |
+| R8 | Estruturas adequadas, sem vetor/matriz | pacote `structure`: lista duplamente encadeada e árvore binária de busca próprias |
+| R9 | Descrição técnica e justificativa | este documento |
+| R10 | Atualização de produtos | Botões "Editar produto" e "Remover produto" |
+| R11 | Única lista de compras na execução | `ListaComprasService` instanciada uma única vez no `Main` |
+| R12 | Somente memória, sem arquivo/BD | nenhum uso de classes de arquivo ou banco no código |
+| R13 | Dados e cálculos consistentes | validações, `BigDecimal`, totais recalculados, lista e árvore sincronizadas |
+| R14 | Interface simples que demonstre as funções | menu em grade de botões com ícones e dicas, todas as telas em `JOptionPane` |
+| R15 | Decisões adicionais explicadas | seção 7 |
+| R16 | Apresentação e demonstração | seção 8 e botão "Dados de exemplo" |
+
+## 10. Testes
+
+`TesteSistema` (sem framework) cobre: operações da lista (inserir, remover início/meio/fim/único, buscar, filtrar); da árvore (duplicado, ordem, remoção de folha, um filho, dois filhos e raiz); cadastro e validações; compras parciais e total com transição de status; valores do resumo; edição (renomear atualiza o índice, limite da quantidade); remoção (bloqueio após compra, sincronização, ids não reutilizados); buscas por trecho e seção ignorando acento e maiúsculas; `obter(int)` da lista; o `Conversor` (decimais com vírgula ou ponto, entradas inválidas); o resumo de uma lista filtrada; e a internacionalização (chaves carregadas com acentos, substituição de `{0}`, `{1}` e `{2}`, chave ausente devolvendo `!chave!`, mensagens de exceção vindas do arquivo) e a formatação de moeda, quantidade e porcentagem. Imprime `OK`/`FALHOU` por verificação e encerra com código 1 se houver falha.
