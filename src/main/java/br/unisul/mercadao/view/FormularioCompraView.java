@@ -105,7 +105,7 @@ public final class FormularioCompraView extends JPanel {
 
     private static JLabel criarRotuloDeSituacao(Produto produto) {
         StatusProduto status = produto.getStatus();
-        JLabel situacao = Componentes.destaque(status.getDescricao());
+        JLabel situacao = Componentes.destaque(TextosStatus.descricao(status));
         situacao.setIcon(Icones.status(status, TAMANHO_ICONE_SITUACAO));
         situacao.setForeground(Cores.doStatus(status));
         return situacao;

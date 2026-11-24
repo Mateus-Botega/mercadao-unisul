@@ -8,7 +8,7 @@ O sistema gerencia **uma única lista de compras** durante a execução. Permite
 - Dados **somente em memória** (nenhum arquivo, banco de dados ou serialização).
 - Interface: Swing com **todas as telas dentro de `JOptionPane`** (menu em grade de botões com ícones, formulários, listas e tabelas), ícones carregados de arquivos PNG (`src/main/resources/icones`), sem leitura de console.
 - Textos: todo texto visível vem do arquivo `i18n/mensagens_pt_BR.properties`, acessado pela classe `I18n`. O arquivo é somente ASCII: caracteres especiais usam sequências Unicode (`ã` para "ã"), o que garante a mesma leitura em qualquer sistema e codificação.
-- As estruturas de dados foram **implementadas pela equipe** (pilha e árvore binária de busca) e a lista de produtos usa `java.util.List`. Não há vetores nem matrizes no código do sistema (a única exceção é o `String[] args` exigido pela assinatura do `main`). Do `java.util` usamos `List`/`ArrayList`, `Predicate` e, na `I18n`, o suporte a `ResourceBundle` (ver seção 4.5).
+- As estruturas de dados foram **implementadas pela equipe** (a pilha) e a lista de produtos usa `java.util.List`. Não há vetores nem matrizes no código do sistema (a única exceção é o `String[] args` exigido pela assinatura do `main`). Do `java.util` usamos `List`/`ArrayList`, `Predicate` e, na `I18n`, o suporte a `ResourceBundle` (ver seção 4.5).
 - Dinheiro e quantidades usam `BigDecimal` (nunca `double`/`float`).
 
 ## 2. Como executar
@@ -39,23 +39,26 @@ java -cp out-test br.unisul.mercadao.TesteSistema
 ```
 br.unisul.mercadao
 |-- Main                  inicia: aplica o look and feel e chama o controller
+|-- AppConfig             único lugar que cria as camadas e injeta as dependências
 |-- controller/           MenuController            -> fluxo: recebe a escolha da view, chama o service,
 |                                                      abre a próxima view e trata RegraNegocioException
-|-- view/                 TelaBoasVindas, MenuPrincipalView, ConsultaView,
-|                         FormularioProdutoView, FormularioCompraView, SeletorProdutoView,
-|                         RelatorioView, ResumoView, ProdutoTableModel,
-|                         Dialogos, Componentes, Icones, Cores, OpcaoMenu, OpcaoConsulta
-|                                                    -> telas Swing (tudo em JOptionPane); sem regra de negócio
-|                                                       Dialogos = abrir/fechar diálogos e mensagens
-|                                                       Componentes = fábrica de componentes (botão de menu, linha de
-|                                                       formulário, barra de progresso, total digitado ao vivo)
-|-- service/              ListaComprasService       -> regras de negócio e sincronização das estruturas
+|-- view/                 telas Swing (tudo em JOptionPane); sem regra de negócio
+|                         TelaBoasVindas, MenuPrincipalView, ConsultaView, FormularioProdutoView,
+|                         FormularioCompraView, SeletorProdutoView, RelatorioView, ResumoView,
+|                         ProdutoTableModel, RenderizadorCelula, RenderizadorProduto, TipoRelatorio,
+|                         TextosStatus, Dialogos, Componentes, Icones, Cores, OpcaoMenu, OpcaoConsulta
+|-- service/              ListaComprasService       -> casos de uso: cadastrar, editar, remover, restaurar,
+|                                                      comprar, desfazer compra, consultar (só orquestra)
+|                         ResumoService             -> cálculo dos totais e do percentual
 |                         DadosExemplo              -> produtos de exemplo para a demonstração
-|-- model/                Produto, StatusProduto, ResumoFinanceiro
-|                                                    -> dados e cálculos derivados
+|-- validation/           ProdutoValidador          -> valida e normaliza os dados digitados
+|-- repository/           ProdutoRepository         -> guarda a List de produtos e responde consultas simples
+|                         HistoricoCompras          -> pilha das compras (desfazer)
+|                         ProdutosRemovidos         -> pilha dos produtos removidos (restaurar)
+|-- model/                Produto, StatusProduto, ResumoFinanceiro, CompraRegistrada, DadosProduto
+|                                                    -> dados e regras do próprio produto (sem texto de tela)
 |-- exception/            RegraNegocioException     -> erro de regra com mensagem amigável
-|-- structure/            Pilha, ArvoreBinariaBusca
-|                                                    -> estruturas próprias e genéricas (não conhecem Produto)
+|-- structure/            Pilha                     -> estrutura própria e genérica (não conhece Produto)
 |-- util/                 Texto, Formatador, Conversor
 |                                                    -> normalização de nomes, formatação e conversão de números digitados
 `-- i18n/                 I18n                      -> textos do arquivo mensagens_pt_BR.properties
@@ -67,13 +70,22 @@ src/test/java/br/unisul/mercadao/TesteSistema.java
 
 **Regras de dependência:**
 
-| Camada | Pode usar | Não pode usar |
-|---|---|---|
-| `view` | `model`, `structure`, `util`, `i18n`, Swing | `service`, `controller` (a view só recebe dados e devolve a entrada digitada) |
-| `controller` | `view`, `service`, `model`, `structure`, `util`, `exception`, `i18n` | Swing diretamente |
-| `service` | `model`, `structure`, `exception`, `util`, `i18n` | Swing (`javax.swing`, `java.awt`) |
-| `model` | `i18n` (descrição do status) | `service`, `view`, `controller`, Swing |
-| `structure` | somente `java.lang` | `model` e qualquer outra camada (é genérica) |
+| Camada | Responsabilidade | Pode usar | Não pode ter |
+|---|---|---|---|
+| `view` | desenhar telas e devolver o que foi digitado | `model`, `util`, `i18n`, Swing | `service`, `repository`, regra de negócio |
+| `controller` | fluxo entre telas e service; converte texto digitado | `view`, `service`, `model`, `util`, `exception`, `i18n` | Swing, regra de negócio |
+| `service` | casos de uso (cadastrar, editar, remover, comprar, desfazer) | `repository`, `validation`, `model`, `exception`, `util`, `i18n` | Swing, classes internas, armazenamento próprio, cálculos auxiliares (vão para classes próprias) |
+| `validation` | validar e normalizar dados | `model`, `exception`, `util`, `i18n` | alterar produtos |
+| `repository` | guardar e consultar dados em memória | `model`, `structure`, `util` | regras de negócio, mensagens |
+| `model` | dados e regras do próprio objeto | `util` | `service`, `view`, `controller`, `i18n`, Swing |
+| `structure` | estruturas genéricas (pilha) | somente `java.lang` | qualquer outra camada |
+
+**Regras para manter a estrutura (valem para todo código novo):**
+1. Nenhuma classe, `record` ou `enum` aninhado em `service`, `controller`, `validation` e `repository`; cada tipo vai no seu arquivo e na sua camada (dados em `model`).
+2. Em `view`, renderizadores e enums também ficam em arquivo próprio.
+3. Camadas não criam suas próprias dependências: recebem pelo construtor, e só `AppConfig` faz os `new` das camadas.
+4. `service` não guarda dados nem calcula resumos: guarda no `repository`, valida no `validation` e delega cálculos a classes de service próprias.
+5. Texto de tela (`I18n` para rótulos, ícones, cores) fica em `view`; `model` não depende de `i18n`.
 
 O fluxo de uma ação é: a `view` mostra a tela e devolve ao `controller` o que o usuário escolheu ou digitou (por exemplo uma `OpcaoMenu` ou os textos dos campos); o `controller` converte os textos (`Conversor`), chama o `service`, e abre a próxima `view` com o resultado; se o `service` lançar `RegraNegocioException`, o `controller` mostra a mensagem em `Dialogos.erro` e reabre o formulário com o que foi digitado.
 
@@ -95,56 +107,34 @@ O fluxo de uma ação é: a `view` mostra a tela e devolve ao `controller` o que
 
 **O que é:** estrutura LIFO (último a entrar, primeiro a sair), implementada pela equipe com nós encadeados (`empilhar`, `desempilhar`, `espiar`, `estaVazia`, `tamanho`), sem vetor.
 
-**Onde é usada:** cada compra registrada (parcial ou total) é empilhada em `ListaComprasService` (com confirmação antes de desfazer) como `CompraRegistrada(produto, quantidade, precoPago)`. A opção de menu **Desfazer última compra** desempilha a compra mais recente e a reverte no produto (`Produto.desfazerCompra`). Uma segunda pilha guarda os produtos removidos: a opção **Restaurar produto removido** devolve o mais recente à lista (na posição do seu código) e ao índice por nome, recusando se o nome já foi reutilizado. Uma pilha é a estrutura natural porque a compra mais recente é sempre a primeira a ser desfeita, como devolver o último item colocado no carrinho.
+**Onde é usada:** cada compra registrada (parcial ou total) é empilhada em `ListaComprasService` (com confirmação antes de desfazer) como `CompraRegistrada(produto, quantidade, precoPago)`. A opção de menu **Desfazer última compra** desempilha a compra mais recente e a reverte no produto (`Produto.desfazerCompra`). Uma segunda pilha guarda os produtos removidos: a opção **Restaurar produto removido** devolve o mais recente à lista (na posição do seu código), recusando se o nome já foi reutilizado. Uma pilha é a estrutura natural porque a compra mais recente é sempre a primeira a ser desfeita, como devolver o último item colocado no carrinho.
 
-### 4.2 Árvore binária de busca (`ArvoreBinariaBusca<K, V>`)
+### 4.2 Busca e ordenação por nome (sobre a própria `List`)
 
-**O que é:** árvore em que, para cada nó, as chaves da subárvore esquerda são menores e as da direita são maiores. É usada como **índice por nome**: a chave é o nome normalizado (sem acento, minúsculo, espaços colapsados) e o valor é a **referência ao mesmo objeto `Produto`** que está na lista.
+Não há índice separado: o nome é uma propriedade do `Produto` e a lista é a única fonte de dados.
+- **Nome único e busca por nome:** percorre a lista comparando o nome normalizado (sem acento, minúsculo, espaços colapsados), então "Arroz", " arroz " e "ÁRROZ" são o mesmo produto.
+- **Ordem alfabética:** copia a lista e aplica `List.sort` com o nome normalizado como critério; a lista de cadastro não é alterada.
+- **Por que sem estrutura extra:** para o tamanho de uma lista de compras o custo O(n) é imperceptível, e não existe segunda estrutura para manter sincronizada.
 
-**Por que foi escolhida:**
-- **Busca por nome em O(log n) no caso médio**, em vez de varrer toda a lista.
-- **Garante nomes únicos:** `inserir` rejeita chave repetida, logo "Arroz", " arroz " e "ÁRROZ" são o mesmo produto.
-- **Ordem alfabética "de graça":** o percurso em ordem (esquerda, nó, direita) visita as chaves em ordem crescente, sem algoritmo de ordenação.
-- Remoção tratando os três casos clássicos: folha, um filho e dois filhos (substituição pelo sucessor em ordem).
+### 4.3 Estruturas usadas
 
-**Limitação conhecida (para a apresentação):** a árvore não é balanceada. No pior caso (cadastros em ordem alfabética estrita) ela degenera em uma lista e as operações passam a O(n). Para o volume de uma lista de compras isso é aceitável; uma árvore AVL ou rubro-negra resolveria, ao custo de maior complexidade de código.
-
-**Por que não vetor/matriz:** manter um vetor ordenado exigiria deslocar elementos a cada inserção/remoção (O(n)); uma matriz não representa bem o problema.
-
-### 4.3 Por que duas estruturas e não uma só?
-
-Cada uma resolve o que faz melhor: a lista mantém a ordem natural e suporta percursos e filtros; a árvore acelera a busca por nome e impõe unicidade. O custo é manter as duas **sincronizadas**, o que é feito no serviço (ver seção 6).
+A **lista** guarda os produtos e suporta percursos, filtros e ordenação; a **pilha** guarda o histórico de compras e de remoções para desfazer.
 
 ### 4.4 Diagrama
 
 ```
-   List<Produto> (ArrayList)                  (ordem de cadastro)
+   List<Produto> (ArrayList)        (ordem de cadastro)
+   [ Produto #1 | Produto #2 | Produto #3 | ... ]
+        |
+        +--> filtros (seção, trecho, adquiridos, pendentes): percorrem e devolvem nova List
+        +--> ordem alfabética: copia e ordena pelo nome normalizado
 
-   inicio                                                      fim
-     |                                                          |
-     v                                                          v
-   +--------+  proximo   +--------+  proximo   +--------+  proximo
-   | No #1  | ---------> | No #2  | ---------> | No #3  | ---------> null
-   | Arroz  | <--------- | Leite  | <--------- | Banana | 
-   +---+----+  anterior  +---+----+  anterior  +---+----+
-       |                      |                    |
-       |  (mesmos objetos Produto, sem cópia)      |
-       v                      v                    v
-   +--------+             +--------+           +--------+
-   |Produto |             |Produto |           |Produto |
-   | id = 1 |             | id = 2 |           | id = 3 |
-   +--------+             +--------+           +--------+
-       ^                      ^                    ^
-       |                      |                    |
-       |            ArvoreBinariaBusca<String, Produto>  (chave = nome normalizado)
-       |                      |                    |
-       |                  [ "leite" ]              |
-       |                  /          \             |
-       |          [ "arroz" ]      [ "banana" ]    |
-       +----------------+              +-----------+
+   Pilha<CompraRegistrada>          Pilha<Produto>
+   topo: última compra              topo: último removido
+        (desfazer compra)                (restaurar produto)
 ```
 
-Os nós da lista e da árvore apontam para os **mesmos** objetos `Produto`. Alterar uma compra no objeto vale automaticamente para as duas visões.
+Pilhas e lista referenciam os **mesmos** objetos `Produto`; não há cópias que possam divergir.
 
 ### 4.5 Bibliotecas padrão permitidas
 
@@ -152,27 +142,27 @@ Estão liberados `java.util.List`/`ArrayList` (e `java.util.function.Predicate`)
 
 ## 5. Complexidade (Big-O)
 
-n = número de produtos; h = altura da árvore (médio ~ log n, pior caso n).
+n = número de produtos.
 
 | Operação | Estrutura usada | Complexidade |
 |---|---|---|
-| Cadastrar produto | árvore (verifica nome) + lista (insere no fim) | O(h), médio O(log n) |
+| Cadastrar produto | lista (verifica nome e insere no fim) | O(n) |
 | Inserir no fim da lista | lista | O(1) |
 | Buscar por código | lista | O(n) |
-| Buscar por nome exato | árvore | O(h), médio O(log n) |
+| Buscar por nome exato | lista (percorre) | O(n) |
 | Buscar por trecho do nome | lista (filtro) | O(n) |
 | Listar por seção | lista (filtro) | O(n) |
 | Listar em ordem de cadastro | lista | O(n) |
-| Listar em ordem alfabética | árvore (percurso em ordem) | O(n) |
+| Listar em ordem alfabética | lista (cópia + `sort`) | O(n log n) |
 | Listar adquiridos / pendentes | lista (filtro) | O(n) |
 | Editar (sem trocar nome) | lista (localiza por código) | O(n) |
-| Editar (trocando nome) | lista + árvore (remove e insere chave) | O(n + h) |
-| Remover produto | lista + árvore | O(n + h) |
+| Editar (trocando nome) | lista (confere nome único) | O(n) |
+| Remover produto | lista (+ empilha em removidos) | O(n) |
 | Registrar compra parcial/total | lista (localiza por código) | O(n) |
 | Resumo financeiro | lista (percorre tudo) | O(n) |
 | Obter o i-ésimo elemento (`get(int)`) | lista | O(1) |
 | Desfazer última compra | pilha (desempilha) + produto | O(1) |
-| Restaurar produto removido | pilha + inserção ordenada por código na lista + índice | O(n + h) |
+| Restaurar produto removido | pilha + inserção por código na lista | O(n) |
 | Tamanho / lista vazia | contador | O(1) |
 
 ### 5.1 Complexidade das operações das estruturas
@@ -188,17 +178,7 @@ n = número de produtos; h = altura da árvore (médio ~ log n, pior caso n).
 
 **`java.util.ArrayList`:** `add` no fim O(1) amortizado; `get` O(1); `remove(objeto)` O(n); percursos e filtros O(n).
 
-**`ArvoreBinariaBusca<K, V>`** (h = altura; no caso médio h é proporcional a log n, no pior caso, inserções em ordem já ordenada, h = n):
-
-| Operação | Complexidade | Observação |
-|---|---|---|
-| `inserir` | O(h), médio O(log n) | rejeita chave repetida |
-| `buscar`, `contem` | O(h), médio O(log n) | |
-| `remover` | O(h), médio O(log n) | três casos: folha, um filho (o filho ocupa o lugar) e dois filhos (o nó recebe os dados do sucessor, a menor chave da subárvore direita, que é removido da posição original) |
-| `emOrdem` | O(n) | esquerda, nó, direita: visita as chaves em ordem crescente |
-| `tamanho` | O(1) | |
-
-**`ListaComprasService`:** cadastrar O(h) pela árvore mais O(1) na lista; buscar por nome O(h), médio O(log n); buscar por código, trecho, seção, comprar, editar, remover e resumo O(n); listar em ordem alfabética O(n). As operações validam todos os dados antes de alterar qualquer estrutura e alteram lista e árvore na mesma operação. `Texto.normalizar` custa O(L), com L = tamanho do texto.
+**`ListaComprasService`:** cadastrar, buscar por nome ou código, filtros, comprar, editar, remover e resumo são O(n); listar em ordem alfabética O(n log n). As operações validam todos os dados antes de alterar qualquer estrutura. `Texto.normalizar` custa O(L), com L = tamanho do texto.
 
 A busca por código usa a lista (O(n)) porque o código é usado apenas na seleção de produtos; para listas de compras o custo é desprezível. Um índice por código seria uma melhoria possível, mas duplicaria a manutenção de estruturas sem ganho perceptível.
 
@@ -231,8 +211,8 @@ Valores **derivados** (calculados, nunca guardados): quantidade pendente = desej
 ### 6.3 Como a consistência é garantida
 
 1. **Validar antes de alterar:** toda operação valida todos os dados antes de mexer em qualquer estrutura, então nunca fica "meio atualizada".
-2. **Lista e árvore sincronizadas:** cadastrar insere nas duas; remover remove das duas; renomear remove a chave antiga e insere a nova na mesma operação.
-3. **Objetos compartilhados:** as duas estruturas guardam o mesmo `Produto`; não há cópias que possam divergir.
+2. **Fonte única de dados:** só a lista guarda os produtos; nome único é conferido contra a própria lista (ignorando o produto sendo editado).
+3. **Objetos compartilhados:** lista e pilhas guardam o mesmo `Produto`; não há cópias que possam divergir.
 4. **Totais nunca em cache:** `calcularResumo()` percorre a lista a cada chamada; é impossível um total ficar desatualizado.
 5. **`BigDecimal`:** sem erros de ponto flutuante; escala 2 para dinheiro, 3 para quantidade, `RoundingMode.HALF_UP`.
 6. **Encapsulamento:** quantidade comprada e valor gasto não possuem setters públicos.
@@ -258,7 +238,6 @@ Total de itens (e quantos pendentes, parciais e comprados); **valor estimado tot
 | Arquitetura MVC + service (`controller`, `view`, `service`, `model`, `structure`) | a view não conhece o service e o service não conhece Swing; cada camada tem uma responsabilidade |
 | Sem comentários no código | nomes descritivos e métodos curtos explicam o código; as explicações técnicas (complexidade, justificativas) ficam neste documento |
 | Todos os textos em `mensagens_pt_BR.properties` | internacionalização padrão do Java; facilita revisar e corrigir textos num só lugar |
-| `Consumer` da biblioteca padrão | percurso em ordem da árvore recebe a ação a executar em cada valor |
 | Árvore recursiva e não balanceada | código mais simples de explicar; limitação documentada |
 
 ### 7.1 Interface (JOptionPane com Swing)
@@ -286,7 +265,7 @@ Total de itens (e quantos pendentes, parciais e comprados); **valor estimado tot
 
 1. Abrir o sistema. Mostrar a **tela de boas-vindas** e clicar em "Começar". No menu, mostrar o mini-resumo (itens: 0), a barra de progresso e passar o mouse sobre alguns botões para exibir as dicas.
 2. **Dados de exemplo** - carregar os 14 produtos. Clicar de novo: avisa que nenhum produto novo foi inserido (nomes já existem).
-3. **Listar (ordem de cadastro)** e **Listar (ordem alfabética)** - tabelas com status colorido e totais no rodapé. Comentar as duas estruturas (lista encadeada e percurso em ordem da árvore).
+3. **Listar (ordem de cadastro)** e **Listar (ordem alfabética)** - tabelas com status colorido e totais no rodapé. Comentar a lista e a ordenação por nome.
 4. **Cadastrar produto** - preencher "Sabão em pó" (Limpeza, un, 2, 12,50) e observar o "Valor estimado total" mudando ao digitar. Cadastrar de novo " SABÃO EM PÓ ": o erro de nome duplicado aparece e o formulário **reabre com os valores preenchidos**.
 5. **Consultar produto** - por código; por nome exato (sem acento, ex.: "cafe torrado"); por parte do nome ("leite"); por seção ("hortifruti").
 6. **Editar produto** - escolher "Tomate" na lista (usar o filtro e o duplo clique), aumentar a quantidade para 3 e renomear para "Tomate italiano". Consultar o nome antigo (não encontra) e o novo (encontra).
@@ -294,7 +273,7 @@ Total de itens (e quantos pendentes, parciais e comprados); **valor estimado tot
 8. **Compra total** - "Arroz 5kg": a quantidade vem travada; alterar o preço para 26,90. Status vira Comprado. O produto deixa de aparecer na seleção de compras.
 9. **Produtos adquiridos** (comprados e parciais, com quantidade e valor gasto) e **Produtos pendentes** (pendentes e parciais).
 10. **Resumo financeiro** - estimado total, gasto, economia (verde) ou excesso (vermelho), restante, projeção e barra de progresso. Conferir um número manualmente.
-11. **Remover produto** - tentar remover um já comprado (rejeitado, com explicação) e remover um sem compra (confirmação; some da lista e do índice).
+11. **Remover produto** - tentar remover um já comprado (rejeitado, com explicação) e remover um sem compra (confirmação; some da lista ).
 12. Mostrar o **cancelamento**: abrir um cadastro e clicar em Cancelar (volta ao menu, nada muda). Clicar em **Sair** e mostrar o aviso de que os dados serão perdidos.
 13. (Opcional) Executar `TesteSistema` com todas as verificações em OK.
 
@@ -309,16 +288,16 @@ Total de itens (e quantos pendentes, parciais e comprados); **valor estimado tot
 | R5 | Informação de produtos adquiridos | Botão "Produtos adquiridos" (comprados e parciais, com quantidade e valor gasto) |
 | R6 | Informação de produtos pendentes | Botão "Produtos pendentes" (pendentes e parciais, com quantidade e valor estimado restante) |
 | R7 | Valores estimados e gastos | Botão "Resumo financeiro" e colunas dos relatórios |
-| R8 | Estruturas adequadas, sem vetor/matriz | `java.util.List`, pilha (histórico de compras / desfazer) e árvore binária de busca; sem vetor/matrizs |
+| R8 | Estruturas adequadas, sem vetor/matriz | `java.util.List`, pilha (histórico de compras / desfazer), sem vetor/matrizs |
 | R9 | Descrição técnica e justificativa | este documento |
 | R10 | Atualização de produtos | Botões "Editar produto" e "Remover produto" |
 | R11 | Única lista de compras na execução | `ListaComprasService` instanciada uma única vez no `Main` |
 | R12 | Somente memória, sem arquivo/BD | nenhum uso de classes de arquivo ou banco no código |
-| R13 | Dados e cálculos consistentes | validações, `BigDecimal`, totais recalculados, lista e árvore sincronizadas |
+| R13 | Dados e cálculos consistentes | validações, `BigDecimal`, totais recalculados, lista como fonte única |
 | R14 | Interface simples que demonstre as funções | menu em grade de botões com ícones e dicas, todas as telas em `JOptionPane` |
 | R15 | Decisões adicionais explicadas | seção 7 |
 | R16 | Apresentação e demonstração | seção 8 e botão "Dados de exemplo" |
 
 ## 10. Testes
 
-`TesteSistema` (sem framework) cobre: operações da pilha (empilhar, desempilhar, LIFO, vazia) e desfazer compra; da árvore (duplicado, ordem, remoção de folha, um filho, dois filhos e raiz); cadastro e validações; compras parciais e total com transição de status; valores do resumo; edição (renomear atualiza o índice, limite da quantidade); remoção (bloqueio após compra, sincronização, ids não reutilizados); buscas por trecho e seção ignorando acento e maiúsculas; `obter(int)` da lista; o `Conversor` (decimais com vírgula ou ponto, entradas inválidas); o resumo de uma lista filtrada; e a internacionalização (chaves carregadas com acentos, substituição de `{0}`, `{1}` e `{2}`, chave ausente devolvendo `!chave!`, mensagens de exceção vindas do arquivo) e a formatação de moeda, quantidade e porcentagem. Imprime `OK`/`FALHOU` por verificação e encerra com código 1 se houver falha.
+`TesteSistema` (sem framework) cobre: operações da pilha (empilhar, desempilhar, LIFO, vazia) e desfazer compra; cadastro e validações; compras parciais e total com transição de status; valores do resumo; edição (renomear atualiza o índice, limite da quantidade); remoção (bloqueio após compra, sincronização, ids não reutilizados); buscas por trecho e seção ignorando acento e maiúsculas; `obter(int)` da lista; o `Conversor` (decimais com vírgula ou ponto, entradas inválidas); o resumo de uma lista filtrada; e a internacionalização (chaves carregadas com acentos, substituição de `{0}`, `{1}` e `{2}`, chave ausente devolvendo `!chave!`, mensagens de exceção vindas do arquivo) e a formatação de moeda, quantidade e porcentagem. Imprime `OK`/`FALHOU` por verificação e encerra com código 1 se houver falha.

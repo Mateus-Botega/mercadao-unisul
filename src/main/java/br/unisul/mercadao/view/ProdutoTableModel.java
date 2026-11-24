@@ -81,7 +81,7 @@ final class ProdutoTableModel extends AbstractTableModel {
             case COLUNA_PRECO -> Formatador.moeda(produto.getPrecoEstimadoUnitario());
             case COLUNA_ESTIMADO -> Formatador.moeda(produto.getValorEstimadoTotal());
             case COLUNA_GASTO -> Formatador.moeda(produto.getValorGasto());
-            default -> produto.getStatus().getDescricao();
+            default -> TextosStatus.descricao(produto.getStatus());
         };
     }
 }

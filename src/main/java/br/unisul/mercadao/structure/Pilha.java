@@ -3,7 +3,7 @@ package br.unisul.mercadao.structure;
 /**
  * Pilha (LIFO): o ultimo elemento empilhado e o primeiro a ser desempilhado.
  * Implementada com nos encadeados, sem vetor.
- */
+*/
 public class Pilha<T> {
 
     private static class No<T> {

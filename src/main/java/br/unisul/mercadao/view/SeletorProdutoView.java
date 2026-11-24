@@ -2,10 +2,8 @@ package br.unisul.mercadao.view;
 
 import br.unisul.mercadao.i18n.I18n;
 import br.unisul.mercadao.model.Produto;
-import br.unisul.mercadao.model.StatusProduto;
 import br.unisul.mercadao.util.Texto;
 
-import javax.swing.DefaultListCellRenderer;
 import javax.swing.DefaultListModel;
 import javax.swing.Icon;
 import javax.swing.JLabel;
@@ -75,7 +73,7 @@ public final class SeletorProdutoView extends JPanel {
 
     private void configurarLista() {
         lista.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        lista.setCellRenderer(new RenderizadorProduto());
+        lista.setCellRenderer(new RenderizadorProduto(TAMANHO_ICONE_STATUS));
         lista.setVisibleRowCount(LINHAS_VISIVEIS);
         lista.setToolTipText(I18n.t("dica.lista_produtos"));
         lista.addMouseListener(new MouseAdapter() {
@@ -118,38 +116,12 @@ public final class SeletorProdutoView extends JPanel {
         String alvo = Texto.normalizar(filtro.getText());
         modelo.clear();
         for (Produto produto : fonte) {
-            if (combinaComFiltro(produto, alvo)) {
+            if (produto.combinaCom(alvo)) {
                 modelo.addElement(produto);
             }
         }
         if (!modelo.isEmpty()) {
             lista.setSelectedIndex(0);
-        }
-    }
-
-    private static boolean combinaComFiltro(Produto produto, String alvo) {
-        return alvo.isEmpty()
-                || Texto.normalizar(produto.getNome()).contains(alvo)
-                || Texto.normalizar(produto.getSecao()).contains(alvo)
-                || String.valueOf(produto.getId()).equals(alvo);
-    }
-
-    private static final class RenderizadorProduto extends DefaultListCellRenderer {
-
-        private static final long serialVersionUID = 1L;
-
-        @Override
-        public Component getListCellRendererComponent(JList<?> lista, Object valor, int indice,
-                                                      boolean selecionado, boolean comFoco) {
-            super.getListCellRendererComponent(lista, valor, indice, selecionado, comFoco);
-            if (valor instanceof Produto produto) {
-                StatusProduto status = produto.getStatus();
-                String texto = I18n.t("selecao.item", String.valueOf(produto.getId()), produto.getNome(),
-                        status.getDescricao());
-                setText(texto);
-                setIcon(Icones.status(status, TAMANHO_ICONE_STATUS));
-            }
-            return this;
         }
     }
 }

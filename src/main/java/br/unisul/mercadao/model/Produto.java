@@ -1,5 +1,7 @@
 package br.unisul.mercadao.model;
 
+import br.unisul.mercadao.util.Texto;
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 
@@ -101,6 +103,21 @@ public class Produto {
     public void desfazerCompra(BigDecimal quantidade, BigDecimal precoUnitarioPago) {
         quantidadeComprada = quantidadeComprada.subtract(quantidade);
         valorGasto = valorGasto.subtract(calcularValor(quantidade, precoUnitarioPago));
+    }
+
+    public boolean nomeContem(String textoNormalizado) {
+        return Texto.normalizar(nome).contains(textoNormalizado);
+    }
+
+    public boolean secaoContem(String textoNormalizado) {
+        return Texto.normalizar(secao).contains(textoNormalizado);
+    }
+
+    public boolean combinaCom(String textoNormalizado) {
+        return textoNormalizado.isEmpty()
+                || nomeContem(textoNormalizado)
+                || secaoContem(textoNormalizado)
+                || String.valueOf(id).equals(textoNormalizado);
     }
 
     public void setNome(String nome) {

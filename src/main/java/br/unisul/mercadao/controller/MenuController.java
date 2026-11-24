@@ -20,6 +20,8 @@ import br.unisul.mercadao.view.RelatorioView;
 import br.unisul.mercadao.view.ResumoView;
 import br.unisul.mercadao.view.SeletorProdutoView;
 import br.unisul.mercadao.view.TelaBoasVindas;
+import br.unisul.mercadao.view.TextosStatus;
+import br.unisul.mercadao.view.TipoRelatorio;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -81,22 +83,22 @@ public class MenuController {
 
     private void listarEmOrdemCadastro() {
         List<Produto> produtos = listaCompras.listarEmOrdemCadastro();
-        exibirRelatorio(RelatorioView.Tipo.CADASTRO, produtos);
+        exibirRelatorio(TipoRelatorio.CADASTRO, produtos);
     }
 
     private void listarEmOrdemAlfabetica() {
         List<Produto> produtos = listaCompras.listarEmOrdemAlfabetica();
-        exibirRelatorio(RelatorioView.Tipo.ALFABETICA, produtos);
+        exibirRelatorio(TipoRelatorio.ALFABETICA, produtos);
     }
 
     private void listarAdquiridos() {
         List<Produto> produtos = listaCompras.listarComprados();
-        exibirRelatorio(RelatorioView.Tipo.ADQUIRIDOS, produtos);
+        exibirRelatorio(TipoRelatorio.ADQUIRIDOS, produtos);
     }
 
     private void listarPendentes() {
         List<Produto> produtos = listaCompras.listarPendentes();
-        exibirRelatorio(RelatorioView.Tipo.PENDENTES, produtos);
+        exibirRelatorio(TipoRelatorio.PENDENTES, produtos);
     }
 
     private void exibirResumo() {
@@ -104,7 +106,7 @@ public class MenuController {
         ResumoView.exibir(resumo);
     }
 
-    private void exibirRelatorio(RelatorioView.Tipo tipo, List<Produto> produtos) {
+    private void exibirRelatorio(TipoRelatorio tipo, List<Produto> produtos) {
         ResumoFinanceiro resumo = listaCompras.calcularResumo(produtos);
         RelatorioView.exibir(tipo, produtos, resumo);
     }
@@ -225,22 +227,22 @@ public class MenuController {
     private void consultarPorCodigo(String texto) {
         int codigo = lerCodigo(texto);
         List<Produto> encontrados = listaCompras.listarPorId(codigo);
-        exibirRelatorio(RelatorioView.Tipo.CONSULTA, encontrados);
+        exibirRelatorio(TipoRelatorio.CONSULTA, encontrados);
     }
 
     private void consultarPorNome(String texto) {
         List<Produto> encontrados = listaCompras.listarPorNome(texto);
-        exibirRelatorio(RelatorioView.Tipo.CONSULTA, encontrados);
+        exibirRelatorio(TipoRelatorio.CONSULTA, encontrados);
     }
 
     private void consultarPorTrecho(String texto) {
         List<Produto> encontrados = listaCompras.buscarPorTrecho(texto);
-        exibirRelatorio(RelatorioView.Tipo.CONSULTA, encontrados);
+        exibirRelatorio(TipoRelatorio.CONSULTA, encontrados);
     }
 
     private void consultarPorSecao(String texto) {
         List<Produto> encontrados = listaCompras.listarPorSecao(texto);
-        exibirRelatorio(RelatorioView.Tipo.CONSULTA, encontrados);
+        exibirRelatorio(TipoRelatorio.CONSULTA, encontrados);
     }
 
     private boolean cadastrarComDadosDoFormulario(FormularioProdutoView formulario) {
@@ -285,7 +287,7 @@ public class MenuController {
                 BigDecimal quantidade = lerNumero(formulario.getQuantidade(), "campo.quantidade_comprada");
                 atualizado = listaCompras.comprar(produto.getId(), quantidade, precoPago);
             }
-            String situacao = atualizado.getStatus().getDescricao();
+            String situacao = TextosStatus.descricao(atualizado.getStatus());
             String mensagem = I18n.t("sucesso.compra", atualizado.getNome(), situacao);
             Dialogos.sucesso(mensagem);
             return true;

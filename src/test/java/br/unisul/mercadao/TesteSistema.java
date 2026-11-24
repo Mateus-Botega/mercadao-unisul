@@ -7,9 +7,9 @@ import br.unisul.mercadao.model.ResumoFinanceiro;
 import br.unisul.mercadao.model.StatusProduto;
 import br.unisul.mercadao.service.DadosExemplo;
 import br.unisul.mercadao.service.ListaComprasService;
-import br.unisul.mercadao.structure.ArvoreBinariaBusca;
 import br.unisul.mercadao.structure.Pilha;
 import br.unisul.mercadao.util.Conversor;
+import br.unisul.mercadao.view.TextosStatus;
 import br.unisul.mercadao.util.Formatador;
 
 import java.math.BigDecimal;
@@ -26,7 +26,6 @@ public class TesteSistema {
 
     public static void main(String[] args) {
         testarPilha();
-        testarArvore();
         testarCadastro();
         testarCompras();
         testarValores();
@@ -99,7 +98,7 @@ public class TesteSistema {
 
     private static void testarDesfazerCompra() {
         System.out.println("== Desfazer última compra (pilha) ==");
-        ListaComprasService listaCompras = new ListaComprasService();
+        ListaComprasService listaCompras = AppConfig.criarServico();
         Produto arroz = cadastrarProduto(listaCompras, "Arroz", "Mercearia", "4", "10");
         Produto feijao = cadastrarProduto(listaCompras, "Feijão", "Mercearia", "2", "8");
         verificarRejeita("sem compras não há o que desfazer", listaCompras::desfazerUltimaCompra);
@@ -123,48 +122,9 @@ public class TesteSistema {
         verificar("resumo volta a zero gasto", igual(listaCompras.calcularResumo().getValorGasto(), "0"));
     }
 
-    private static void testarArvore() {
-        System.out.println("== Árvore binária de busca ==");
-        ArvoreBinariaBusca<String, String> arvore = new ArvoreBinariaBusca<>();
-        verificar("árvore nova vazia", arvore.tamanho() == 0 && arvore.buscar("m") == null);
-        verificar("inserir raiz m", arvore.inserir("m", "M"));
-        arvore.inserir("f", "F");
-        arvore.inserir("t", "T");
-        arvore.inserir("c", "C");
-        arvore.inserir("h", "H");
-        arvore.inserir("p", "P");
-        arvore.inserir("w", "W");
-        arvore.inserir("a", "A");
-        verificar("tamanho 8", arvore.tamanho() == 8);
-        verificar("duplicado rejeitado", !arvore.inserir("m", "outro") && arvore.tamanho() == 8);
-        verificar("buscar existente", "H".equals(arvore.buscar("h")));
-        verificar("buscar inexistente", arvore.buscar("z") == null && !arvore.contem("z"));
-        verificar("em ordem alfabético", textoDaArvore(arvore).equals("a,c,f,h,m,p,t,w,"));
-
-        verificar("remover folha (a)", arvore.remover("a") && textoDaArvore(arvore).equals("c,f,h,m,p,t,w,"));
-        verificar("remover nó com 1 filho (f)", arvore.remover("f") && textoDaArvore(arvore).equals("c,h,m,p,t,w,"));
-        verificar("remover nó com 2 filhos (t)", arvore.remover("t") && textoDaArvore(arvore).equals("c,h,m,p,w,"));
-        verificar("remover raiz (m)", arvore.remover("m") && textoDaArvore(arvore).equals("c,h,p,w,"));
-        verificar("remover inexistente retorna false", !arvore.remover("zz"));
-        verificar("tamanho final 4", arvore.tamanho() == 4);
-        verificar("buscas continuam corretas após remoções",
-                "P".equals(arvore.buscar("p")) && arvore.buscar("m") == null);
-        arvore.remover("c");
-        arvore.remover("h");
-        arvore.remover("p");
-        arvore.remover("w");
-        verificar("esvaziar a árvore", arvore.tamanho() == 0 && textoDaArvore(arvore).isEmpty());
-    }
-
-    private static String textoDaArvore(ArvoreBinariaBusca<String, String> arvore) {
-        StringBuilder texto = new StringBuilder();
-        arvore.emOrdem(valor -> texto.append(valor.toLowerCase()).append(','));
-        return texto.toString();
-    }
-
     private static void testarCadastro() {
         System.out.println("== Cadastro e validações ==");
-        ListaComprasService listaCompras = new ListaComprasService();
+        ListaComprasService listaCompras = AppConfig.criarServico();
         Produto arroz = cadastrarProduto(listaCompras, "Arroz", "Mercearia", "2", "5.50");
         verificar("primeiro código é 1", arroz.getId() == 1);
         verificar("novo produto é PENDENTE", arroz.getStatus() == StatusProduto.PENDENTE);
@@ -192,7 +152,7 @@ public class TesteSistema {
 
     private static void testarCompras() {
         System.out.println("== Compras parciais e totais ==");
-        ListaComprasService listaCompras = new ListaComprasService();
+        ListaComprasService listaCompras = AppConfig.criarServico();
         Produto leite = cadastrarProduto(listaCompras, "Leite", "Laticínios", "10", "5.00");
         verificar("inicia PENDENTE", leite.getStatus() == StatusProduto.PENDENTE);
         listaCompras.comprar(leite.getId(), decimal("3"), decimal("4.90"));
@@ -224,7 +184,7 @@ public class TesteSistema {
 
     private static void testarValores() {
         System.out.println("== Valores e resumo ==");
-        ListaComprasService listaCompras = new ListaComprasService();
+        ListaComprasService listaCompras = AppConfig.criarServico();
         ResumoFinanceiro resumoVazio = listaCompras.calcularResumo();
         verificar("resumo vazio zerado", resumoVazio.getTotalItens() == 0
                 && igual(resumoVazio.getValorGasto(), "0") && igual(resumoVazio.getPercentualConcluido(), "0"));
@@ -259,7 +219,7 @@ public class TesteSistema {
     }
 
     private static boolean arredondaValorGasto() {
-        ListaComprasService listaCompras = new ListaComprasService();
+        ListaComprasService listaCompras = AppConfig.criarServico();
         Produto granel = listaCompras.cadastrar("Granel", "Mercearia", "kg", decimal("1"), decimal("1"));
         listaCompras.comprar(granel.getId(), decimal("0.335"), decimal("1.00"));
         return igual(granel.getValorGasto(), "0.34");
@@ -267,7 +227,7 @@ public class TesteSistema {
 
     private static void testarEdicao() {
         System.out.println("== Edição ==");
-        ListaComprasService listaCompras = new ListaComprasService();
+        ListaComprasService listaCompras = AppConfig.criarServico();
         Produto arroz = cadastrarProduto(listaCompras, "Arroz", "Mercearia", "5", "4.00");
         cadastrarProduto(listaCompras, "Feijão", "Mercearia", "2", "7.00");
         listaCompras.comprar(arroz.getId(), decimal("3"), decimal("4.00"));
@@ -294,7 +254,7 @@ public class TesteSistema {
 
     private static void testarRemocao() {
         System.out.println("== Remoção ==");
-        ListaComprasService listaCompras = new ListaComprasService();
+        ListaComprasService listaCompras = AppConfig.criarServico();
         Produto arroz = cadastrarProduto(listaCompras, "Arroz", "Mercearia", "2", "5");
         Produto feijao = cadastrarProduto(listaCompras, "Feijão", "Mercearia", "2", "6");
         listaCompras.comprar(arroz.getId(), decimal("1"), decimal("5"));
@@ -314,7 +274,7 @@ public class TesteSistema {
 
     private static void testarBuscas() {
         System.out.println("== Buscas e listagens ==");
-        ListaComprasService listaCompras = new ListaComprasService();
+        ListaComprasService listaCompras = AppConfig.criarServico();
         cadastrarProduto(listaCompras, "Banana Prata", "Hortifrúti", "1", "5");
         cadastrarProduto(listaCompras, "Maçã", "Hortifrúti", "1", "6");
         cadastrarProduto(listaCompras, "Abacate", "Hortifrúti", "1", "7");
@@ -353,7 +313,7 @@ public class TesteSistema {
 
     private static void testarConsultasUnicas() {
         System.out.println("== Consultas por código/nome, cópia e critérios do produto ==");
-        ListaComprasService listaCompras = new ListaComprasService();
+        ListaComprasService listaCompras = AppConfig.criarServico();
         Produto arroz = cadastrarProduto(listaCompras, "Arroz", "Mercearia", "2", "10");
         Produto feijao = cadastrarProduto(listaCompras, "Feijão", "Mercearia", "1", "8");
 
@@ -383,7 +343,7 @@ public class TesteSistema {
 
     private static void testarRestaurarProduto() {
         System.out.println("== Restaurar produto removido (pilha) ==");
-        ListaComprasService listaCompras = new ListaComprasService();
+        ListaComprasService listaCompras = AppConfig.criarServico();
         Produto arroz = cadastrarProduto(listaCompras, "Arroz", "Mercearia", "1", "10");
         Produto feijao = cadastrarProduto(listaCompras, "Feijão", "Mercearia", "1", "8");
         Produto leite = cadastrarProduto(listaCompras, "Leite", "Laticínios", "1", "5");
@@ -423,9 +383,9 @@ public class TesteSistema {
                 I18n.t("selecao.item", "1", "Arroz", "Pendente").equals("#1 - Arroz - Pendente"));
         verificar("parâmetro ausente vira vazio", I18n.t("selecao.item", "1").equals("#1 -  - "));
         verificar("descrição do status vem do bundle",
-                StatusProduto.PARCIAL.getDescricao().equals(I18n.t("status.parcial")));
+                TextosStatus.descricao(StatusProduto.PARCIAL).equals(I18n.t("status.parcial")));
 
-        ListaComprasService listaCompras = new ListaComprasService();
+        ListaComprasService listaCompras = AppConfig.criarServico();
         cadastrarProduto(listaCompras, "Arroz", "Mercearia", "1", "1");
         String mensagem = "";
         try {

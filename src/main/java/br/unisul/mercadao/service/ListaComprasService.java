@@ -3,83 +3,56 @@ package br.unisul.mercadao.service;
 import br.unisul.mercadao.exception.RegraNegocioException;
 import br.unisul.mercadao.i18n.I18n;
 import br.unisul.mercadao.model.CompraRegistrada;
+import br.unisul.mercadao.model.DadosProduto;
 import br.unisul.mercadao.model.Produto;
 import br.unisul.mercadao.model.ResumoFinanceiro;
 import br.unisul.mercadao.model.StatusProduto;
-import br.unisul.mercadao.structure.ArvoreBinariaBusca;
-import br.unisul.mercadao.structure.Pilha;
-import br.unisul.mercadao.util.Formatador;
+import br.unisul.mercadao.repository.HistoricoCompras;
+import br.unisul.mercadao.repository.ProdutoRepository;
+import br.unisul.mercadao.repository.ProdutosRemovidos;
 import br.unisul.mercadao.util.Texto;
+import br.unisul.mercadao.validation.ProdutoValidador;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Predicate;
 
+/** Casos de uso da lista de compras: cadastrar, editar, remover, comprar, desfazer e consultar. */
 public class ListaComprasService {
 
-    private static final int TAMANHO_MAXIMO_NOME = 60;
-    private static final int TAMANHO_MAXIMO_SECAO = 30;
-    private static final int TAMANHO_MAXIMO_UNIDADE = 10;
-    private static final int ESCALA_PERCENTUAL = 1;
+    private static final int SEM_PRODUTO = -1;
 
-    private record DadosValidados(String nome, String secao, String unidade,
-                                  BigDecimal quantidadeDesejada, BigDecimal precoEstimado) {
+    private final ProdutoRepository produtos;
+    private final HistoricoCompras historicoCompras;
+    private final ProdutosRemovidos produtosRemovidos;
+    private final ProdutoValidador validador;
+    private final ResumoService resumoService;
+
+    public ListaComprasService(ProdutoRepository produtos, HistoricoCompras historicoCompras,
+                               ProdutosRemovidos produtosRemovidos, ProdutoValidador validador,
+                               ResumoService resumoService) {
+        this.produtos = produtos;
+        this.historicoCompras = historicoCompras;
+        this.produtosRemovidos = produtosRemovidos;
+        this.validador = validador;
+        this.resumoService = resumoService;
     }
-
-    private static class Acumulador {
-        private int pendentes;
-        private int parciais;
-        private int comprados;
-        private BigDecimal estimadoTotal = BigDecimal.ZERO.setScale(Produto.ESCALA_VALOR);
-        private BigDecimal gasto = BigDecimal.ZERO.setScale(Produto.ESCALA_VALOR);
-        private BigDecimal estimadoComprado = BigDecimal.ZERO.setScale(Produto.ESCALA_VALOR);
-        private BigDecimal estimadoRestante = BigDecimal.ZERO.setScale(Produto.ESCALA_VALOR);
-
-        private void somar(Produto produto) {
-            contarStatus(produto.getStatus());
-            estimadoTotal = estimadoTotal.add(produto.getValorEstimadoTotal());
-            gasto = gasto.add(produto.getValorGasto());
-            estimadoComprado = estimadoComprado.add(produto.getValorEstimadoComprado());
-            estimadoRestante = estimadoRestante.add(produto.getValorEstimadoPendente());
-        }
-
-        private void contarStatus(StatusProduto status) {
-            switch (status) {
-                case PENDENTE -> pendentes++;
-                case PARCIAL -> parciais++;
-                case COMPRADO -> comprados++;
-            }
-        }
-    }
-
-    private final List<Produto> produtos = new ArrayList<>();
-    private final Pilha<CompraRegistrada> historicoCompras = new Pilha<>();
-    private final Pilha<Produto> produtosRemovidos = new Pilha<>();
-    private final ArvoreBinariaBusca<String, Produto> indicePorNome = new ArvoreBinariaBusca<>();
-    private int proximoId = 1;
 
     public Produto cadastrar(String nome, String secao, String unidade,
                              BigDecimal quantidadeDesejada, BigDecimal precoEstimado) {
-        DadosValidados dados = validar(nome, secao, unidade, quantidadeDesejada, precoEstimado);
-        String chaveNome = Texto.normalizar(dados.nome());
-        exigirNomeDisponivel(chaveNome, dados.nome());
-        int id = proximoId;
-        proximoId++;
-        Produto produto = new Produto(id, dados.nome(), dados.secao(), dados.unidade(),
+        DadosProduto dados = validador.validar(nome, secao, unidade, quantidadeDesejada, precoEstimado);
+        exigirNomeDisponivel(dados.nome(), SEM_PRODUTO);
+        Produto produto = new Produto(produtos.gerarId(), dados.nome(), dados.secao(), dados.unidade(),
                 dados.quantidadeDesejada(), dados.precoEstimado());
-        produtos.add(produto);
-        indicePorNome.inserir(chaveNome, produto);
+        produtos.adicionar(produto);
         return produto;
     }
 
     public Produto editar(int id, String nome, String secao, String unidade,
                           BigDecimal quantidadeDesejada, BigDecimal precoEstimado) {
         Produto produto = exigirPorId(id);
-        DadosValidados dados = validar(nome, secao, unidade, quantidadeDesejada, precoEstimado);
-        exigirQuantidadeNaoMenorQueComprada(produto, dados.quantidadeDesejada());
-        atualizarIndicePorNome(produto, dados.nome());
+        DadosProduto dados = validador.validar(nome, secao, unidade, quantidadeDesejada, precoEstimado);
+        validador.exigirQuantidadeNaoMenorQueComprada(produto, dados.quantidadeDesejada());
+        exigirNomeDisponivel(dados.nome(), id);
         produto.setNome(dados.nome());
         produto.setSecao(dados.secao());
         produto.setUnidade(dados.unidade());
@@ -93,14 +66,12 @@ public class ListaComprasService {
         if (produto.possuiCompra()) {
             throw new RegraNegocioException(I18n.t("erro.remover_com_compra", produto.getNome()));
         }
-        String chaveNome = Texto.normalizar(produto.getNome());
-        produtos.remove(produto);
-        indicePorNome.remover(chaveNome);
-        produtosRemovidos.empilhar(produto);
+        produtos.remover(produto);
+        produtosRemovidos.guardar(produto);
     }
 
     public Produto espiarUltimoRemovido() {
-        Produto ultimo = produtosRemovidos.espiar();
+        Produto ultimo = produtosRemovidos.ultimo();
         if (ultimo == null) {
             throw new RegraNegocioException(I18n.t("erro.sem_remocao_para_desfazer"));
         }
@@ -109,11 +80,9 @@ public class ListaComprasService {
 
     public Produto restaurarUltimoRemovido() {
         Produto produto = espiarUltimoRemovido();
-        String chaveNome = Texto.normalizar(produto.getNome());
-        exigirNomeDisponivel(chaveNome, produto.getNome());
-        produtosRemovidos.desempilhar();
-        produtos.add(posicaoPorCodigo(produto.getId()), produto);
-        indicePorNome.inserir(chaveNome, produto);
+        exigirNomeDisponivel(produto.getNome(), SEM_PRODUTO);
+        produtosRemovidos.retirarUltimo();
+        produtos.inserirPorCodigo(produto);
         return produto;
     }
 
@@ -122,28 +91,11 @@ public class ListaComprasService {
         if (produto.getStatus() == StatusProduto.COMPRADO) {
             throw new RegraNegocioException(I18n.t("erro.ja_comprado", produto.getNome()));
         }
-        BigDecimal quantidadeValida = validarQuantidadeComprada(quantidade, produto);
-        BigDecimal precoValido = validarPreco("campo.preco_pago", precoPago);
+        BigDecimal quantidadeValida = validador.validarQuantidadeComprada(quantidade, produto);
+        BigDecimal precoValido = validador.validarPreco("campo.preco_pago", precoPago);
         produto.registrarCompra(quantidadeValida, precoValido);
-        historicoCompras.empilhar(new CompraRegistrada(produto, quantidadeValida, precoValido));
+        historicoCompras.registrar(new CompraRegistrada(produto, quantidadeValida, precoValido));
         return produto;
-    }
-
-    public CompraRegistrada espiarUltimaCompra() {
-        CompraRegistrada ultima = historicoCompras.espiar();
-        if (ultima == null) {
-            throw new RegraNegocioException(I18n.t("erro.sem_compra_para_desfazer"));
-        }
-        return ultima;
-    }
-
-    public CompraRegistrada desfazerUltimaCompra() {
-        CompraRegistrada ultima = historicoCompras.desempilhar();
-        if (ultima == null) {
-            throw new RegraNegocioException(I18n.t("erro.sem_compra_para_desfazer"));
-        }
-        ultima.produto().desfazerCompra(ultima.quantidade(), ultima.precoPago());
-        return ultima;
     }
 
     public Produto comprarTotal(int id, BigDecimal precoPago) {
@@ -151,28 +103,35 @@ public class ListaComprasService {
         return comprar(id, produto.getQuantidadePendente(), precoPago);
     }
 
-    public Produto buscarPorId(int id) {
-        for (Produto produto : produtos) {
-            if (produto.getId() == id) {
-                return produto;
-            }
+    public CompraRegistrada espiarUltimaCompra() {
+        CompraRegistrada ultima = historicoCompras.ultima();
+        if (ultima == null) {
+            throw new RegraNegocioException(I18n.t("erro.sem_compra_para_desfazer"));
         }
-        return null;
+        return ultima;
+    }
+
+    public CompraRegistrada desfazerUltimaCompra() {
+        CompraRegistrada ultima = espiarUltimaCompra();
+        historicoCompras.retirarUltima();
+        ultima.produto().desfazerCompra(ultima.quantidade(), ultima.precoPago());
+        return ultima;
+    }
+
+    public Produto buscarPorId(int id) {
+        return produtos.buscarPorId(id);
     }
 
     public Produto buscarPorNome(String nome) {
-        String chaveNome = Texto.normalizar(nome);
-        return indicePorNome.buscar(chaveNome);
+        return produtos.buscarPorNome(nome);
     }
 
     public List<Produto> listarPorId(int id) {
-        Produto produto = buscarPorId(id);
-        return emLista(produto);
+        return emLista(buscarPorId(id));
     }
 
     public List<Produto> listarPorNome(String nome) {
-        Produto produto = buscarPorNome(nome);
-        return emLista(produto);
+        return emLista(buscarPorNome(nome));
     }
 
     public List<Produto> buscarPorTrecho(String trecho) {
@@ -180,7 +139,7 @@ public class ListaComprasService {
         if (alvo.isEmpty()) {
             throw new RegraNegocioException(I18n.t("erro.trecho_vazio"));
         }
-        return filtrar(candidato -> Texto.normalizar(candidato.getNome()).contains(alvo));
+        return produtos.filtrar(produto -> produto.nomeContem(alvo));
     }
 
     public List<Produto> listarPorSecao(String secao) {
@@ -188,175 +147,52 @@ public class ListaComprasService {
         if (alvo.isEmpty()) {
             throw new RegraNegocioException(I18n.t("erro.secao_vazia"));
         }
-        return filtrar(candidato -> Texto.normalizar(candidato.getSecao()).contains(alvo));
+        return produtos.filtrar(produto -> produto.secaoContem(alvo));
     }
 
     public List<Produto> listarEmOrdemCadastro() {
-        return new ArrayList<>(produtos);
+        return produtos.listarTodos();
     }
 
     public List<Produto> listarEmOrdemAlfabetica() {
-        List<Produto> resultado = new ArrayList<>();
-        indicePorNome.emOrdem(resultado::add);
-        return resultado;
+        return produtos.listarOrdenadosPorNome();
     }
 
     public List<Produto> listarComprados() {
-        return filtrar(Produto::possuiCompra);
+        return produtos.filtrar(Produto::possuiCompra);
     }
 
     public List<Produto> listarPendentes() {
-        return filtrar(Produto::faltaComprar);
+        return produtos.filtrar(Produto::faltaComprar);
     }
 
     public int tamanho() {
-        return produtos.size();
+        return produtos.tamanho();
     }
 
     public ResumoFinanceiro calcularResumo() {
-        return calcularResumo(produtos);
+        return resumoService.calcular(produtos.listarTodos());
     }
 
     public ResumoFinanceiro calcularResumo(List<Produto> itens) {
-        Acumulador acumulador = new Acumulador();
-        for (Produto produto : itens) {
-            acumulador.somar(produto);
-        }
-        int total = itens.size();
-        BigDecimal percentual = calcularPercentual(acumulador.comprados, total);
-        return new ResumoFinanceiro(total, acumulador.pendentes, acumulador.parciais, acumulador.comprados,
-                acumulador.estimadoTotal, acumulador.gasto, acumulador.estimadoComprado,
-                acumulador.estimadoRestante, percentual);
-    }
-
-    private int posicaoPorCodigo(int id) {
-        int posicao = 0;
-        while (posicao < produtos.size() && produtos.get(posicao).getId() < id) {
-            posicao++;
-        }
-        return posicao;
+        return resumoService.calcular(itens);
     }
 
     private List<Produto> emLista(Produto produto) {
         return produto == null ? List.of() : List.of(produto);
     }
 
-    private List<Produto> filtrar(Predicate<Produto> criterio) {
-        List<Produto> resultado = new ArrayList<>();
-        for (Produto produto : produtos) {
-            if (criterio.test(produto)) {
-                resultado.add(produto);
-            }
-        }
-        return resultado;
-    }
-
-    private BigDecimal calcularPercentual(int comprados, int total) {
-        if (total == 0) {
-            return BigDecimal.ZERO.setScale(ESCALA_PERCENTUAL);
-        }
-        return BigDecimal.valueOf(comprados * 100L)
-                .divide(BigDecimal.valueOf(total), ESCALA_PERCENTUAL, RoundingMode.HALF_UP);
-    }
-
     private Produto exigirPorId(int id) {
-        Produto produto = buscarPorId(id);
+        Produto produto = produtos.buscarPorId(id);
         if (produto == null) {
             throw new RegraNegocioException(I18n.t("erro.produto_inexistente", String.valueOf(id)));
         }
         return produto;
     }
 
-    private void exigirNomeDisponivel(String chaveNome, String nome) {
-        if (indicePorNome.contem(chaveNome)) {
+    private void exigirNomeDisponivel(String nome, int idIgnorado) {
+        if (produtos.existeNome(nome, idIgnorado)) {
             throw new RegraNegocioException(I18n.t("erro.nome_duplicado", nome));
         }
-    }
-
-    private void exigirQuantidadeNaoMenorQueComprada(Produto produto, BigDecimal novaQuantidadeDesejada) {
-        BigDecimal comprada = produto.getQuantidadeComprada();
-        if (novaQuantidadeDesejada.compareTo(comprada) < 0) {
-            String desejadaFormatada = Formatador.quantidade(novaQuantidadeDesejada);
-            String compradaFormatada = Formatador.quantidade(comprada);
-            throw new RegraNegocioException(I18n.t("erro.qtd_desejada_menor_comprada",
-                    desejadaFormatada, compradaFormatada));
-        }
-    }
-
-    private void atualizarIndicePorNome(Produto produto, String novoNome) {
-        String chaveAntiga = Texto.normalizar(produto.getNome());
-        String chaveNova = Texto.normalizar(novoNome);
-        if (chaveAntiga.equals(chaveNova)) {
-            return;
-        }
-        exigirNomeDisponivel(chaveNova, novoNome);
-        indicePorNome.remover(chaveAntiga);
-        indicePorNome.inserir(chaveNova, produto);
-    }
-
-    private DadosValidados validar(String nome, String secao, String unidade,
-                                   BigDecimal quantidadeDesejada, BigDecimal precoEstimado) {
-        String nomeValido = validarNome(nome);
-        String secaoValida = validarTexto("campo.secao", secao, TAMANHO_MAXIMO_SECAO);
-        String unidadeValida = validarTexto("campo.unidade", unidade, TAMANHO_MAXIMO_UNIDADE);
-        BigDecimal quantidadeValida = validarQuantidade(quantidadeDesejada,
-                "erro.qtd_desejada_positiva", "erro.qtd_desejada_casas");
-        BigDecimal precoValido = validarPreco("campo.preco_estimado", precoEstimado);
-        return new DadosValidados(nomeValido, secaoValida, unidadeValida, quantidadeValida, precoValido);
-    }
-
-    private String validarNome(String nome) {
-        String limpo = Texto.colapsarEspacos(nome);
-        if (limpo.isEmpty()) {
-            throw new RegraNegocioException(I18n.t("erro.nome_obrigatorio"));
-        }
-        if (limpo.length() > TAMANHO_MAXIMO_NOME) {
-            throw new RegraNegocioException(I18n.t("erro.nome_tamanho", String.valueOf(TAMANHO_MAXIMO_NOME)));
-        }
-        return limpo;
-    }
-
-    private String validarTexto(String chaveCampo, String valor, int tamanhoMaximo) {
-        String campo = I18n.t(chaveCampo);
-        String limpo = Texto.colapsarEspacos(valor);
-        if (limpo.isEmpty()) {
-            throw new RegraNegocioException(I18n.t("erro.campo_obrigatorio", campo));
-        }
-        if (limpo.length() > tamanhoMaximo) {
-            throw new RegraNegocioException(I18n.t("erro.campo_tamanho", campo, String.valueOf(tamanhoMaximo)));
-        }
-        return limpo;
-    }
-
-    private BigDecimal validarQuantidade(BigDecimal quantidade, String chaveErroPositiva, String chaveErroCasas) {
-        if (quantidade == null || quantidade.signum() <= 0) {
-            throw new RegraNegocioException(I18n.t(chaveErroPositiva));
-        }
-        if (quantidade.stripTrailingZeros().scale() > Produto.ESCALA_QUANTIDADE) {
-            throw new RegraNegocioException(I18n.t(chaveErroCasas));
-        }
-        return quantidade.setScale(Produto.ESCALA_QUANTIDADE, RoundingMode.HALF_UP);
-    }
-
-    private BigDecimal validarQuantidadeComprada(BigDecimal quantidade, Produto produto) {
-        BigDecimal quantidadeValida = validarQuantidade(quantidade,
-                "erro.qtd_comprada_positiva", "erro.qtd_comprada_casas");
-        BigDecimal pendente = produto.getQuantidadePendente();
-        if (quantidadeValida.compareTo(pendente) > 0) {
-            String pendenteFormatada = Formatador.quantidade(pendente);
-            throw new RegraNegocioException(I18n.t("erro.qtd_excede", pendenteFormatada));
-        }
-        return quantidadeValida;
-    }
-
-    private BigDecimal validarPreco(String chaveCampo, BigDecimal preco) {
-        String campo = I18n.t(chaveCampo);
-        if (preco == null || preco.signum() < 0) {
-            throw new RegraNegocioException(I18n.t("erro.preco_negativo", campo));
-        }
-        if (preco.stripTrailingZeros().scale() > Produto.ESCALA_VALOR) {
-            throw new RegraNegocioException(I18n.t("erro.preco_casas", campo));
-        }
-        return preco.setScale(Produto.ESCALA_VALOR, RoundingMode.HALF_UP);
     }
 }

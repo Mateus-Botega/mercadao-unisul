@@ -1,6 +1,6 @@
 # Mercadão Unisul - Sistema de Lista de Compras de Supermercado
 
-Aplicação desktop (interface gráfica **Swing**) em **Java 24 + Maven** para gerenciar uma lista de compras de supermercado. Projeto acadêmico de Estruturas de Dados (Unisul): os dados ficam **apenas em memória** e as estruturas (lista duplamente encadeada e árvore binária de busca) são implementadas manualmente, sem usar `java.util.List`/`Map` como estrutura principal.
+Aplicação desktop (interface gráfica **Swing**) em **Java 24 + Maven** para gerenciar uma lista de compras de supermercado. Projeto acadêmico de Estruturas de Dados (Unisul): os dados ficam **apenas em memória** e a lista de produtos usa `java.util.List` (`ArrayList`), e a **pilha** é implementada manualmente. Não há vetores nem matrizes no código.
 
 ## Funcionalidades
 
@@ -10,7 +10,33 @@ Aplicação desktop (interface gráfica **Swing**) em **Java 24 + Maven** para g
 - Registrar compra parcial ou total
 - Listar produtos adquiridos e pendentes
 - Resumo financeiro (valor estimado × valor gasto)
+- **Desfazer a última compra** (usa pilha)
+- **Restaurar o último produto removido** (usa pilha)
 - Carregar dados de exemplo
+
+**O que é uma pilha:** estrutura LIFO (*Last In, First Out*): o último elemento que entra é o primeiro que sai, como pratos empilhados. Classe `structure/Pilha.java`, feita com nós encadeados (cada nó guarda o valor e o nó de baixo), sem vetor.
+
+| Operação | O que faz | Custo |
+|---|---|---|
+| `empilhar(x)` | coloca `x` no topo | O(1) |
+| `desempilhar()` | remove e devolve o topo (`null` se vazia) | O(1) |
+| `espiar()` | lê o topo sem remover | O(1) |
+| `estaVazia()`, `tamanho()` | consulta | O(1) |
+
+### Onde a pilha é usada (`ListaComprasService`)
+
+**1. Histórico de compras: "Desfazer última compra"**
+- *Por que pilha:* quem erra uma compra quer desfazer a mais recente primeiro, e só depois as anteriores. É exatamente o comportamento LIFO.
+- *Como funciona:* toda compra (parcial ou total) empilha um `CompraRegistrada(produto, quantidade, precoPago)`. Ao desfazer, o sistema mostra a compra do topo (`espiar`), pede confirmação, desempilha e reverte no produto a quantidade comprada e o valor gasto. O status do produto é recalculado (por exemplo, Comprado volta a Parcial ou Pendente).
+- *Exemplo:* compra A (arroz, 1), compra B (feijão, 2), compra C (arroz, 2). Desfazer remove C, depois B, depois A.
+
+**2. Produtos removidos: "Restaurar produto removido"**
+- *Por que pilha:* o produto removido por último é o primeiro que o usuário quer de volta (como a lixeira com "desfazer").
+- *Como funciona:* `remover` empilha o `Produto` inteiro. Ao restaurar, o sistema confirma, verifica se o nome não foi reutilizado, desempilha e reinsere o produto com o **mesmo código**, na posição correta da lista (ordem de cadastro preservada). Se o nome já foi reutilizado, a restauração é recusada e o produto continua na pilha.
+
+**Regras que mantêm tudo consistente:** produto com compra registrada não pode ser removido, e o desfazer respeita a ordem inversa; por isso nenhuma entrada da pilha de compras aponta para produto removido.
+
+**Por que não fila:** fila é FIFO (o primeiro a entrar é o primeiro a sair), o oposto do que "desfazer" precisa.
 
 ## Estrutura do projeto
 
@@ -23,9 +49,12 @@ MercadaoUnisul/
     │   ├── java/br/unisul/mercadao/
     │   │   ├── Main.java           # Ponto de entrada (classe principal)
     │   │   ├── controller/         # Controle do menu
-    │   │   ├── model/              # Produto, StatusProduto, ResumoFinanceiro
-    │   │   ├── service/            # Regras de negócio e dados de exemplo
-    │   │   ├── structure/          # Pilha (desfazer compra) e árvore binária de busca
+    │   │   ├── AppConfig.java      # Monta as camadas (injeção de dependências)
+    │   │   ├── model/              # Produto, StatusProduto, ResumoFinanceiro, CompraRegistrada, DadosProduto
+    │   │   ├── service/            # Casos de uso (ListaComprasService), ResumoService e dados de exemplo
+    │   │   ├── validation/         # Validação dos dados digitados
+    │   │   ├── repository/         # Armazenamento em memória (lista e pilhas)
+    │   │   ├── structure/          # Pilha (desfazer compra e restaurar produto)
     │   │   ├── view/               # Telas Swing
     │   │   ├── util/ i18n/ exception/
     │   └── resources/              # Ícones (icones/) e textos (i18n/mensagens_pt_BR.properties)

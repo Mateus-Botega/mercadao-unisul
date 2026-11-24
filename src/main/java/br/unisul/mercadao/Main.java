@@ -14,7 +14,7 @@ public class Main {
 
     private static void iniciar() {
         aplicarVisualDoSistema();
-        ListaComprasService listaCompras = new ListaComprasService();
+        ListaComprasService listaCompras = AppConfig.criarServico();
         MenuController controller = new MenuController(listaCompras);
         controller.executar();
         System.exit(0);
