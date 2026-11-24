@@ -3,7 +3,6 @@ package br.unisul.mercadao.view;
 import br.unisul.mercadao.i18n.I18n;
 import br.unisul.mercadao.model.Produto;
 import br.unisul.mercadao.model.StatusProduto;
-import br.unisul.mercadao.structure.ListaDuplamenteEncadeada;
 import br.unisul.mercadao.util.Texto;
 
 import javax.swing.DefaultListCellRenderer;
@@ -21,6 +20,7 @@ import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.util.List;
 
 public final class SeletorProdutoView extends JPanel {
 
@@ -33,10 +33,10 @@ public final class SeletorProdutoView extends JPanel {
     private final DefaultListModel<Produto> modelo = new DefaultListModel<>();
     private final JList<Produto> lista = new JList<>(modelo);
     private final JTextField filtro = new JTextField(LARGURA_FILTRO);
-    private final transient ListaDuplamenteEncadeada<Produto> fonte;
+    private final transient List<Produto> fonte;
     private final OpcaoMenu finalidade;
 
-    private SeletorProdutoView(OpcaoMenu finalidade, String instrucao, ListaDuplamenteEncadeada<Produto> fonte) {
+    private SeletorProdutoView(OpcaoMenu finalidade, String instrucao, List<Produto> fonte) {
         super(new BorderLayout(0, 8));
         this.finalidade = finalidade;
         this.fonte = fonte;
@@ -48,8 +48,8 @@ public final class SeletorProdutoView extends JPanel {
     }
 
     public static Produto escolher(OpcaoMenu finalidade, String instrucao, String semItens,
-                                   ListaDuplamenteEncadeada<Produto> fonte) {
-        if (fonte.estaVazia()) {
+                                   List<Produto> fonte) {
+        if (fonte.isEmpty()) {
             Dialogos.aviso(semItens);
             return null;
         }
@@ -116,9 +116,12 @@ public final class SeletorProdutoView extends JPanel {
 
     private void preencherModelo() {
         String alvo = Texto.normalizar(filtro.getText());
-        ListaDuplamenteEncadeada<Produto> visiveis = fonte.filtrar(produto -> combinaComFiltro(produto, alvo));
         modelo.clear();
-        visiveis.paraCada(modelo::addElement);
+        for (Produto produto : fonte) {
+            if (combinaComFiltro(produto, alvo)) {
+                modelo.addElement(produto);
+            }
+        }
         if (!modelo.isEmpty()) {
             lista.setSelectedIndex(0);
         }

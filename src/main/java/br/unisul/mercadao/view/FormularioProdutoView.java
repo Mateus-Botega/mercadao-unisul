@@ -2,7 +2,6 @@ package br.unisul.mercadao.view;
 
 import br.unisul.mercadao.i18n.I18n;
 import br.unisul.mercadao.model.Produto;
-import br.unisul.mercadao.structure.ListaDuplamenteEncadeada;
 import br.unisul.mercadao.util.Formatador;
 import br.unisul.mercadao.util.Texto;
 
@@ -17,6 +16,7 @@ import javax.swing.text.JTextComponent;
 import java.awt.Font;
 import java.awt.GridBagLayout;
 import java.math.BigDecimal;
+import java.util.List;
 
 public final class FormularioProdutoView extends JPanel {
 
@@ -34,7 +34,7 @@ public final class FormularioProdutoView extends JPanel {
     private final String chaveTitulo;
     private final String nomeIcone;
 
-    private FormularioProdutoView(ListaDuplamenteEncadeada<Produto> produtosExistentes,
+    private FormularioProdutoView(List<Produto> produtosExistentes,
                                   String chaveTitulo, String nomeIcone) {
         super(new GridBagLayout());
         this.chaveTitulo = chaveTitulo;
@@ -47,7 +47,7 @@ public final class FormularioProdutoView extends JPanel {
         Componentes.aoDigitar(campoPreco, this::atualizarTotal);
     }
 
-    public static FormularioProdutoView paraCadastro(ListaDuplamenteEncadeada<Produto> produtosExistentes) {
+    public static FormularioProdutoView paraCadastro(List<Produto> produtosExistentes) {
         FormularioProdutoView formulario = new FormularioProdutoView(produtosExistentes,
                 "form.titulo_cadastrar", Icones.CADASTRAR);
         String unidadePadrao = I18n.t("unidade.un");
@@ -57,7 +57,7 @@ public final class FormularioProdutoView extends JPanel {
         return formulario;
     }
 
-    public static FormularioProdutoView paraEdicao(ListaDuplamenteEncadeada<Produto> produtosExistentes,
+    public static FormularioProdutoView paraEdicao(List<Produto> produtosExistentes,
                                                    Produto produto) {
         FormularioProdutoView formulario = new FormularioProdutoView(produtosExistentes,
                 "form.titulo_editar", Icones.EDITAR);
@@ -131,9 +131,11 @@ public final class FormularioProdutoView extends JPanel {
         return combo;
     }
 
-    private static DefaultComboBoxModel<String> criarModeloDeSecoes(ListaDuplamenteEncadeada<Produto> produtos) {
+    private static DefaultComboBoxModel<String> criarModeloDeSecoes(List<Produto> produtos) {
         DefaultComboBoxModel<String> modelo = new DefaultComboBoxModel<>();
-        produtos.paraCada(produto -> adicionarSeNovo(modelo, produto.getSecao()));
+        for (Produto produto : produtos) {
+            adicionarSeNovo(modelo, produto.getSecao());
+        }
         adicionarChave(modelo, "secao.mercearia");
         adicionarChave(modelo, "secao.hortifruti");
         adicionarChave(modelo, "secao.laticinios");

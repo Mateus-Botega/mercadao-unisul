@@ -8,7 +8,7 @@ O sistema gerencia **uma única lista de compras** durante a execução. Permite
 - Dados **somente em memória** (nenhum arquivo, banco de dados ou serialização).
 - Interface: Swing com **todas as telas dentro de `JOptionPane`** (menu em grade de botões com ícones, formulários, listas e tabelas), ícones carregados de arquivos PNG (`src/main/resources/icones`), sem leitura de console.
 - Textos: todo texto visível vem do arquivo `i18n/mensagens_pt_BR.properties`, acessado pela classe `I18n`. O arquivo é somente ASCII: caracteres especiais usam sequências Unicode (`ã` para "ã"), o que garante a mesma leitura em qualquer sistema e codificação.
-- As estruturas de dados foram **implementadas pela equipe** (lista duplamente encadeada e árvore binária de busca). Não há vetores, matrizes nem coleções prontas da biblioteca padrão no código do sistema (a única exceção é o `String[] args` exigido pela assinatura do `main`). O pacote `java.util` só é importado pela classe `I18n` (ver seção 4.5).
+- As estruturas de dados foram **implementadas pela equipe** (pilha e árvore binária de busca) e a lista de produtos usa `java.util.List`. Não há vetores nem matrizes no código do sistema (a única exceção é o `String[] args` exigido pela assinatura do `main`). Do `java.util` usamos `List`/`ArrayList`, `Predicate` e, na `I18n`, o suporte a `ResourceBundle` (ver seção 4.5).
 - Dinheiro e quantidades usam `BigDecimal` (nunca `double`/`float`).
 
 ## 2. Como executar
@@ -54,7 +54,7 @@ br.unisul.mercadao
 |-- model/                Produto, StatusProduto, ResumoFinanceiro
 |                                                    -> dados e cálculos derivados
 |-- exception/            RegraNegocioException     -> erro de regra com mensagem amigável
-|-- structure/            ListaDuplamenteEncadeada, ArvoreBinariaBusca, Filtro, Acao
+|-- structure/            Pilha, ArvoreBinariaBusca
 |                                                    -> estruturas próprias e genéricas (não conhecem Produto)
 |-- util/                 Texto, Formatador, Conversor
 |                                                    -> normalização de nomes, formatação e conversão de números digitados
@@ -81,17 +81,21 @@ O fluxo de uma ação é: a `view` mostra a tela e devolve ao `controller` o que
 
 ## 4. Estruturas de dados escolhidas
 
-### 4.1 Lista duplamente encadeada (`ListaDuplamenteEncadeada<T>`)
+### 4.1 Lista (`java.util.List`, implementação `ArrayList`)
 
-**O que é:** sequência de nós; cada nó guarda o valor, a referência ao nó anterior e ao próximo. A lista guarda `inicio`, `fim` e `tamanho`.
+**O que é:** sequência de elementos acessível por posição. O código usa a interface `List<Produto>` e só instancia `ArrayList` nos pontos de criação; a classe é da biblioteca padrão e não há vetores (`[]`) no código da equipe.
 
 **Por que foi escolhida:**
-- A lista de compras cresce e diminui durante a execução. Uma lista encadeada tem **tamanho dinâmico**, sem precisar "estimar" capacidade.
-- Cadastrar um produto é **inserir no fim em O(1)** (temos a referência `fim`), preservando a **ordem de cadastro**.
-- Remover um produto do meio é só **religar o anterior ao próximo**, sem deslocar elementos. A ligação dupla permite religar os dois lados sem precisar guardar o "nó anterior" durante a busca.
-- Filtros (pendentes, adquiridos, seção, trecho de nome) são percursos simples em O(n).
+- A lista de compras cresce e diminui durante a execução; `List` tem **tamanho dinâmico**.
+- Cadastrar um produto é `add` no fim, preservando a **ordem de cadastro**.
+- Remover um produto é `remove(produto)`; percorrer, filtrar e somar são `for` simples, fáceis de explicar e depurar.
+- Os relatórios recebem a mesma `List<Produto>`; o modelo da tabela usa `get(linha)` direto.
 
-**Por que não vetor/matriz:** são proibidos pela especificação do trabalho e, além disso, exigiriam definir um tamanho fixo ou realocar e copiar o conteúdo quando cheios, e deslocar elementos a cada remoção no meio.
+### 4.1.1 Pilha (`Pilha<T>`) - histórico de compras
+
+**O que é:** estrutura LIFO (último a entrar, primeiro a sair), implementada pela equipe com nós encadeados (`empilhar`, `desempilhar`, `espiar`, `estaVazia`, `tamanho`), sem vetor.
+
+**Onde é usada:** cada compra registrada (parcial ou total) é empilhada em `ListaComprasService` (com confirmação antes de desfazer) como `CompraRegistrada(produto, quantidade, precoPago)`. A opção de menu **Desfazer última compra** desempilha a compra mais recente e a reverte no produto (`Produto.desfazerCompra`). Uma segunda pilha guarda os produtos removidos: a opção **Restaurar produto removido** devolve o mais recente à lista (na posição do seu código) e ao índice por nome, recusando se o nome já foi reutilizado. Uma pilha é a estrutura natural porque a compra mais recente é sempre a primeira a ser desfeita, como devolver o último item colocado no carrinho.
 
 ### 4.2 Árvore binária de busca (`ArvoreBinariaBusca<K, V>`)
 
@@ -114,7 +118,7 @@ Cada uma resolve o que faz melhor: a lista mantém a ordem natural e suporta per
 ### 4.4 Diagrama
 
 ```
-   ListaDuplamenteEncadeada<Produto>          (ordem de cadastro)
+   List<Produto> (ArrayList)                  (ordem de cadastro)
 
    inicio                                                      fim
      |                                                          |
@@ -142,9 +146,9 @@ Cada uma resolve o que faz melhor: a lista mantém a ordem natural e suporta per
 
 Os nós da lista e da árvore apontam para os **mesmos** objetos `Produto`. Alterar uma compra no objeto vale automaticamente para as duas visões.
 
-### 4.5 Exceção documentada: `java.util` apenas na classe `I18n`
+### 4.5 Bibliotecas padrão permitidas
 
-A regra do trabalho proíbe coleções e vetores prontos. A internacionalização padrão do Java, porém, depende de `ResourceBundle`, `Locale` e `MissingResourceException`, que ficam em `java.util`. Essas classes **não são estruturas de dados nem vetores**: apenas localizam e leem o arquivo `.properties`. Por isso a classe `I18n` é a **única** do sistema autorizada a importar `java.util`; todas as outras (incluindo as estruturas da lista de compras, o modelo da tabela e as telas) continuam sem nenhum import desse pacote. A API de `I18n` não usa `MessageFormat` nem varargs: tem sobrecargas `t(chave)`, `t(chave, a)`, `t(chave, a, b)` e `t(chave, a, b, c)` e faz a substituição de `{0}`, `{1}` e `{2}` à mão.
+Estão liberados `java.util.List`/`ArrayList` (e `java.util.function.Predicate`). Continuam proibidos vetores e matrizes (`[]`, `toCharArray`, `split`, varargs) no código da equipe, com a única exceção do `String[] args` do `main`.
 
 ## 5. Complexidade (Big-O)
 
@@ -166,26 +170,23 @@ n = número de produtos; h = altura da árvore (médio ~ log n, pior caso n).
 | Remover produto | lista + árvore | O(n + h) |
 | Registrar compra parcial/total | lista (localiza por código) | O(n) |
 | Resumo financeiro | lista (percorre tudo) | O(n) |
-| Obter o i-ésimo elemento (`obter(int)`) | lista (percorre do início ou do fim, o que estiver mais perto) | O(n), no máximo n/2 saltos |
+| Obter o i-ésimo elemento (`get(int)`) | lista | O(1) |
+| Desfazer última compra | pilha (desempilha) + produto | O(1) |
+| Restaurar produto removido | pilha + inserção ordenada por código na lista + índice | O(n + h) |
 | Tamanho / lista vazia | contador | O(1) |
-
-O método `obter(int)` existe para o modelo da tabela de relatórios (`ProdutoTableModel`): como a lista é encadeada, não há acesso direto por posição. Pintar uma tabela com n linhas e 11 colunas custa O(11 n^2) no total, desprezível para uma lista de compras; evitamos copiar os dados para uma coleção pronta ou vetor.
 
 ### 5.1 Complexidade das operações das estruturas
 
-**`ListaDuplamenteEncadeada<T>`** (n = elementos; cada nó conhece o anterior e o próximo, e a lista guarda `inicio`, `fim` e `tamanho`):
+**`Pilha<T>`** (cada nó guarda o valor e o nó abaixo; a pilha guarda `topo` e `tamanho`):
 
 | Operação | Complexidade | Observação |
 |---|---|---|
-| `adicionarNoFim` | O(1) | a referência `fim` evita percorrer a lista |
-| `removerPrimeiro(filtro)` | O(n) para localizar, O(1) para religar | `desligar` trata os quatro casos: único, primeiro, último e do meio |
-| `buscarPrimeiro(filtro)` | O(n) | |
-| `filtrar(filtro)` | O(n) | a nova lista aponta para os mesmos objetos, sem cópia |
-| `copiar()` | O(n) | nova lista com os mesmos objetos, na mesma ordem |
-| `comUmElemento(valor)` | O(1) | fábrica estática usada para o resultado de buscas por código e nome exato |
-| `paraCada(acao)` | O(n) | percorre do início ao fim (ordem de cadastro) |
-| `obter(indice)` | O(n) | parte da extremidade mais próxima: no máximo n/2 saltos |
-| `tamanho`, `estaVazia` | O(1) | contador mantido a cada inserção e remoção |
+| `empilhar` | O(1) | novo nó vira o topo |
+| `desempilhar` | O(1) | devolve o topo (ou `null` se vazia) |
+| `espiar` | O(1) | lê o topo sem remover |
+| `tamanho`, `estaVazia` | O(1) | contador |
+
+**`java.util.ArrayList`:** `add` no fim O(1) amortizado; `get` O(1); `remove(objeto)` O(n); percursos e filtros O(n).
 
 **`ArvoreBinariaBusca<K, V>`** (h = altura; no caso médio h é proporcional a log n, no pior caso, inserções em ordem já ordenada, h = n):
 
@@ -257,7 +258,7 @@ Total de itens (e quantos pendentes, parciais e comprados); **valor estimado tot
 | Arquitetura MVC + service (`controller`, `view`, `service`, `model`, `structure`) | a view não conhece o service e o service não conhece Swing; cada camada tem uma responsabilidade |
 | Sem comentários no código | nomes descritivos e métodos curtos explicam o código; as explicações técnicas (complexidade, justificativas) ficam neste documento |
 | Todos os textos em `mensagens_pt_BR.properties` | internacionalização padrão do Java; facilita revisar e corrigir textos num só lugar |
-| Interfaces `Filtro` e `Acao` próprias | evita depender de classes prontas e deixa as estruturas genéricas |
+| `Consumer` da biblioteca padrão | percurso em ordem da árvore recebe a ação a executar em cada valor |
 | Árvore recursiva e não balanceada | código mais simples de explicar; limitação documentada |
 
 ### 7.1 Interface (JOptionPane com Swing)
@@ -270,7 +271,7 @@ Total de itens (e quantos pendentes, parciais e comprados); **valor estimado tot
 - **Formulário único** de cadastro e edição (`FormularioProdutoView`): nome, seção e unidade (`JComboBox` editáveis com sugestões), quantidade, preço e "Valor estimado total" atualizado a cada tecla (`DocumentListener`). Em caso de erro de validação a mensagem é exibida e o formulário **reabre com os valores digitados**.
 - **Seleção de produto** (`SeletorProdutoView`): `JList` alimentada percorrendo a nossa lista, com filtro por texto, ícone de situação e "#código - nome - situação"; OK, Enter ou duplo clique confirmam.
 - **Compra** (`FormularioCompraView`): cartão com os dados do produto, campos quantidade e preço pago (padrão: o estimado) e "Total desta compra" ao vivo. Na compra total a quantidade fica travada no que falta.
-- **Relatórios:** `JTable` (`RelatorioView`) com `ProdutoTableModel` (estende `AbstractTableModel` e lê a nossa lista via `obter(int)`), coluna Status colorida com ícone, números à direita e rodapé de totais.
+- **Relatórios:** `JTable` (`RelatorioView`) com `ProdutoTableModel` (estende `AbstractTableModel` e lê a `List<Produto>` via `get(int)`), coluna Status colorida com ícone, números à direita e rodapé de totais.
 - **Resumo financeiro** (`ResumoView`): valores em destaque, economia em verde ou excesso em vermelho e barra de progresso.
 - **Cancelar ou fechar** qualquer tela volta ao menu sem alterar nada (nunca há `NullPointerException`).
 
@@ -308,7 +309,7 @@ Total de itens (e quantos pendentes, parciais e comprados); **valor estimado tot
 | R5 | Informação de produtos adquiridos | Botão "Produtos adquiridos" (comprados e parciais, com quantidade e valor gasto) |
 | R6 | Informação de produtos pendentes | Botão "Produtos pendentes" (pendentes e parciais, com quantidade e valor estimado restante) |
 | R7 | Valores estimados e gastos | Botão "Resumo financeiro" e colunas dos relatórios |
-| R8 | Estruturas adequadas, sem vetor/matriz | pacote `structure`: lista duplamente encadeada e árvore binária de busca próprias |
+| R8 | Estruturas adequadas, sem vetor/matriz | `java.util.List`, pilha (histórico de compras / desfazer) e árvore binária de busca; sem vetor/matrizs |
 | R9 | Descrição técnica e justificativa | este documento |
 | R10 | Atualização de produtos | Botões "Editar produto" e "Remover produto" |
 | R11 | Única lista de compras na execução | `ListaComprasService` instanciada uma única vez no `Main` |
@@ -320,4 +321,4 @@ Total de itens (e quantos pendentes, parciais e comprados); **valor estimado tot
 
 ## 10. Testes
 
-`TesteSistema` (sem framework) cobre: operações da lista (inserir, remover início/meio/fim/único, buscar, filtrar); da árvore (duplicado, ordem, remoção de folha, um filho, dois filhos e raiz); cadastro e validações; compras parciais e total com transição de status; valores do resumo; edição (renomear atualiza o índice, limite da quantidade); remoção (bloqueio após compra, sincronização, ids não reutilizados); buscas por trecho e seção ignorando acento e maiúsculas; `obter(int)` da lista; o `Conversor` (decimais com vírgula ou ponto, entradas inválidas); o resumo de uma lista filtrada; e a internacionalização (chaves carregadas com acentos, substituição de `{0}`, `{1}` e `{2}`, chave ausente devolvendo `!chave!`, mensagens de exceção vindas do arquivo) e a formatação de moeda, quantidade e porcentagem. Imprime `OK`/`FALHOU` por verificação e encerra com código 1 se houver falha.
+`TesteSistema` (sem framework) cobre: operações da pilha (empilhar, desempilhar, LIFO, vazia) e desfazer compra; da árvore (duplicado, ordem, remoção de folha, um filho, dois filhos e raiz); cadastro e validações; compras parciais e total com transição de status; valores do resumo; edição (renomear atualiza o índice, limite da quantidade); remoção (bloqueio após compra, sincronização, ids não reutilizados); buscas por trecho e seção ignorando acento e maiúsculas; `obter(int)` da lista; o `Conversor` (decimais com vírgula ou ponto, entradas inválidas); o resumo de uma lista filtrada; e a internacionalização (chaves carregadas com acentos, substituição de `{0}`, `{1}` e `{2}`, chave ausente devolvendo `!chave!`, mensagens de exceção vindas do arquivo) e a formatação de moeda, quantidade e porcentagem. Imprime `OK`/`FALHOU` por verificação e encerra com código 1 se houver falha.

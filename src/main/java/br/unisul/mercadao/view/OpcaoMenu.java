@@ -14,6 +14,8 @@ public enum OpcaoMenu {
     ADQUIRIDOS("menu.adquiridos", "dica.adquiridos", Icones.ADQUIRIDOS),
     PENDENTES("menu.pendentes", "dica.pendentes", Icones.PENDENTES),
     RESUMO("menu.resumo", "dica.resumo", Icones.RESUMO),
+    RESTAURAR_PRODUTO("menu.restaurar_produto", "dica.restaurar_produto", Icones.REMOVER),
+    DESFAZER_COMPRA("menu.desfazer_compra", "dica.desfazer_compra", Icones.AVISO),
     EXEMPLOS("menu.exemplos", "dica.exemplos", Icones.EXEMPLOS),
     SAIR("botao.sair", null, Icones.APP);
 

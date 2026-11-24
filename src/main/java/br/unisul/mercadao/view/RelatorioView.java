@@ -4,7 +4,6 @@ import br.unisul.mercadao.i18n.I18n;
 import br.unisul.mercadao.model.Produto;
 import br.unisul.mercadao.model.ResumoFinanceiro;
 import br.unisul.mercadao.model.StatusProduto;
-import br.unisul.mercadao.structure.ListaDuplamenteEncadeada;
 import br.unisul.mercadao.util.Formatador;
 
 import javax.swing.BorderFactory;
@@ -21,6 +20,7 @@ import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.math.BigDecimal;
+import java.util.List;
 
 public final class RelatorioView extends JPanel {
 
@@ -49,7 +49,7 @@ public final class RelatorioView extends JPanel {
     private static final Dimension TAMANHO_DA_TABELA = new Dimension(980, 320);
     private static final int TAMANHO_ICONE_STATUS = 16;
 
-    private RelatorioView(ListaDuplamenteEncadeada<Produto> produtos, Tipo tipo, ResumoFinanceiro resumo) {
+    private RelatorioView(List<Produto> produtos, Tipo tipo, ResumoFinanceiro resumo) {
         super(new BorderLayout(0, 8));
         JScrollPane rolagem = criarRolagem(produtos);
         JLabel rodape = criarRodape(tipo, resumo);
@@ -57,8 +57,8 @@ public final class RelatorioView extends JPanel {
         add(rodape, BorderLayout.SOUTH);
     }
 
-    public static void exibir(Tipo tipo, ListaDuplamenteEncadeada<Produto> produtos, ResumoFinanceiro resumo) {
-        if (produtos.estaVazia()) {
+    public static void exibir(Tipo tipo, List<Produto> produtos, ResumoFinanceiro resumo) {
+        if (produtos.isEmpty()) {
             String mensagem = I18n.t(tipo.chaveSemItens);
             Dialogos.aviso(mensagem);
             return;
@@ -70,7 +70,7 @@ public final class RelatorioView extends JPanel {
         Dialogos.abrirComBotao(titulo, relatorio, textoBotao, icone);
     }
 
-    private static JScrollPane criarRolagem(ListaDuplamenteEncadeada<Produto> produtos) {
+    private static JScrollPane criarRolagem(List<Produto> produtos) {
         ProdutoTableModel modelo = new ProdutoTableModel(produtos);
         JTable tabela = new JTable(modelo);
         tabela.setRowHeight(ALTURA_DA_LINHA);

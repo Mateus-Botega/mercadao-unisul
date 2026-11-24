@@ -61,6 +61,8 @@ public final class MenuPrincipalView {
         adicionarBotao(grade, OpcaoMenu.ADQUIRIDOS);
         adicionarBotao(grade, OpcaoMenu.PENDENTES);
         adicionarBotao(grade, OpcaoMenu.RESUMO);
+        adicionarBotao(grade, OpcaoMenu.RESTAURAR_PRODUTO);
+        adicionarBotao(grade, OpcaoMenu.DESFAZER_COMPRA);
         adicionarBotao(grade, OpcaoMenu.EXEMPLOS);
         return grade;
     }

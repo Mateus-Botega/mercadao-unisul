@@ -2,16 +2,20 @@ package br.unisul.mercadao.service;
 
 import br.unisul.mercadao.exception.RegraNegocioException;
 import br.unisul.mercadao.i18n.I18n;
+import br.unisul.mercadao.model.CompraRegistrada;
 import br.unisul.mercadao.model.Produto;
 import br.unisul.mercadao.model.ResumoFinanceiro;
 import br.unisul.mercadao.model.StatusProduto;
 import br.unisul.mercadao.structure.ArvoreBinariaBusca;
-import br.unisul.mercadao.structure.ListaDuplamenteEncadeada;
+import br.unisul.mercadao.structure.Pilha;
 import br.unisul.mercadao.util.Formatador;
 import br.unisul.mercadao.util.Texto;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.Predicate;
 
 public class ListaComprasService {
 
@@ -50,7 +54,9 @@ public class ListaComprasService {
         }
     }
 
-    private final ListaDuplamenteEncadeada<Produto> produtos = new ListaDuplamenteEncadeada<>();
+    private final List<Produto> produtos = new ArrayList<>();
+    private final Pilha<CompraRegistrada> historicoCompras = new Pilha<>();
+    private final Pilha<Produto> produtosRemovidos = new Pilha<>();
     private final ArvoreBinariaBusca<String, Produto> indicePorNome = new ArvoreBinariaBusca<>();
     private int proximoId = 1;
 
@@ -63,7 +69,7 @@ public class ListaComprasService {
         proximoId++;
         Produto produto = new Produto(id, dados.nome(), dados.secao(), dados.unidade(),
                 dados.quantidadeDesejada(), dados.precoEstimado());
-        produtos.adicionarNoFim(produto);
+        produtos.add(produto);
         indicePorNome.inserir(chaveNome, produto);
         return produto;
     }
@@ -88,8 +94,27 @@ public class ListaComprasService {
             throw new RegraNegocioException(I18n.t("erro.remover_com_compra", produto.getNome()));
         }
         String chaveNome = Texto.normalizar(produto.getNome());
-        produtos.removerPrimeiro(candidato -> candidato.getId() == id);
+        produtos.remove(produto);
         indicePorNome.remover(chaveNome);
+        produtosRemovidos.empilhar(produto);
+    }
+
+    public Produto espiarUltimoRemovido() {
+        Produto ultimo = produtosRemovidos.espiar();
+        if (ultimo == null) {
+            throw new RegraNegocioException(I18n.t("erro.sem_remocao_para_desfazer"));
+        }
+        return ultimo;
+    }
+
+    public Produto restaurarUltimoRemovido() {
+        Produto produto = espiarUltimoRemovido();
+        String chaveNome = Texto.normalizar(produto.getNome());
+        exigirNomeDisponivel(chaveNome, produto.getNome());
+        produtosRemovidos.desempilhar();
+        produtos.add(posicaoPorCodigo(produto.getId()), produto);
+        indicePorNome.inserir(chaveNome, produto);
+        return produto;
     }
 
     public Produto comprar(int id, BigDecimal quantidade, BigDecimal precoPago) {
@@ -100,7 +125,25 @@ public class ListaComprasService {
         BigDecimal quantidadeValida = validarQuantidadeComprada(quantidade, produto);
         BigDecimal precoValido = validarPreco("campo.preco_pago", precoPago);
         produto.registrarCompra(quantidadeValida, precoValido);
+        historicoCompras.empilhar(new CompraRegistrada(produto, quantidadeValida, precoValido));
         return produto;
+    }
+
+    public CompraRegistrada espiarUltimaCompra() {
+        CompraRegistrada ultima = historicoCompras.espiar();
+        if (ultima == null) {
+            throw new RegraNegocioException(I18n.t("erro.sem_compra_para_desfazer"));
+        }
+        return ultima;
+    }
+
+    public CompraRegistrada desfazerUltimaCompra() {
+        CompraRegistrada ultima = historicoCompras.desempilhar();
+        if (ultima == null) {
+            throw new RegraNegocioException(I18n.t("erro.sem_compra_para_desfazer"));
+        }
+        ultima.produto().desfazerCompra(ultima.quantidade(), ultima.precoPago());
+        return ultima;
     }
 
     public Produto comprarTotal(int id, BigDecimal precoPago) {
@@ -109,7 +152,12 @@ public class ListaComprasService {
     }
 
     public Produto buscarPorId(int id) {
-        return produtos.buscarPrimeiro(candidato -> candidato.getId() == id);
+        for (Produto produto : produtos) {
+            if (produto.getId() == id) {
+                return produto;
+            }
+        }
+        return null;
     }
 
     public Produto buscarPorNome(String nome) {
@@ -117,73 +165,90 @@ public class ListaComprasService {
         return indicePorNome.buscar(chaveNome);
     }
 
-    public ListaDuplamenteEncadeada<Produto> listarPorId(int id) {
+    public List<Produto> listarPorId(int id) {
         Produto produto = buscarPorId(id);
         return emLista(produto);
     }
 
-    public ListaDuplamenteEncadeada<Produto> listarPorNome(String nome) {
+    public List<Produto> listarPorNome(String nome) {
         Produto produto = buscarPorNome(nome);
         return emLista(produto);
     }
 
-    public ListaDuplamenteEncadeada<Produto> buscarPorTrecho(String trecho) {
+    public List<Produto> buscarPorTrecho(String trecho) {
         String alvo = Texto.normalizar(trecho);
         if (alvo.isEmpty()) {
             throw new RegraNegocioException(I18n.t("erro.trecho_vazio"));
         }
-        return produtos.filtrar(candidato -> Texto.normalizar(candidato.getNome()).contains(alvo));
+        return filtrar(candidato -> Texto.normalizar(candidato.getNome()).contains(alvo));
     }
 
-    public ListaDuplamenteEncadeada<Produto> listarPorSecao(String secao) {
+    public List<Produto> listarPorSecao(String secao) {
         String alvo = Texto.normalizar(secao);
         if (alvo.isEmpty()) {
             throw new RegraNegocioException(I18n.t("erro.secao_vazia"));
         }
-        return produtos.filtrar(candidato -> Texto.normalizar(candidato.getSecao()).contains(alvo));
+        return filtrar(candidato -> Texto.normalizar(candidato.getSecao()).contains(alvo));
     }
 
-    public ListaDuplamenteEncadeada<Produto> listarEmOrdemCadastro() {
-        return produtos.copiar();
+    public List<Produto> listarEmOrdemCadastro() {
+        return new ArrayList<>(produtos);
     }
 
-    public ListaDuplamenteEncadeada<Produto> listarEmOrdemAlfabetica() {
-        ListaDuplamenteEncadeada<Produto> resultado = new ListaDuplamenteEncadeada<>();
-        indicePorNome.emOrdem(resultado::adicionarNoFim);
+    public List<Produto> listarEmOrdemAlfabetica() {
+        List<Produto> resultado = new ArrayList<>();
+        indicePorNome.emOrdem(resultado::add);
         return resultado;
     }
 
-    public ListaDuplamenteEncadeada<Produto> listarComprados() {
-        return produtos.filtrar(Produto::possuiCompra);
+    public List<Produto> listarComprados() {
+        return filtrar(Produto::possuiCompra);
     }
 
-    public ListaDuplamenteEncadeada<Produto> listarPendentes() {
-        return produtos.filtrar(Produto::faltaComprar);
+    public List<Produto> listarPendentes() {
+        return filtrar(Produto::faltaComprar);
     }
 
     public int tamanho() {
-        return produtos.tamanho();
+        return produtos.size();
     }
 
     public ResumoFinanceiro calcularResumo() {
         return calcularResumo(produtos);
     }
 
-    public ResumoFinanceiro calcularResumo(ListaDuplamenteEncadeada<Produto> itens) {
+    public ResumoFinanceiro calcularResumo(List<Produto> itens) {
         Acumulador acumulador = new Acumulador();
-        itens.paraCada(acumulador::somar);
-        int total = itens.tamanho();
+        for (Produto produto : itens) {
+            acumulador.somar(produto);
+        }
+        int total = itens.size();
         BigDecimal percentual = calcularPercentual(acumulador.comprados, total);
         return new ResumoFinanceiro(total, acumulador.pendentes, acumulador.parciais, acumulador.comprados,
                 acumulador.estimadoTotal, acumulador.gasto, acumulador.estimadoComprado,
                 acumulador.estimadoRestante, percentual);
     }
 
-    private ListaDuplamenteEncadeada<Produto> emLista(Produto produto) {
-        if (produto == null) {
-            return new ListaDuplamenteEncadeada<>();
+    private int posicaoPorCodigo(int id) {
+        int posicao = 0;
+        while (posicao < produtos.size() && produtos.get(posicao).getId() < id) {
+            posicao++;
         }
-        return ListaDuplamenteEncadeada.comUmElemento(produto);
+        return posicao;
+    }
+
+    private List<Produto> emLista(Produto produto) {
+        return produto == null ? List.of() : List.of(produto);
+    }
+
+    private List<Produto> filtrar(Predicate<Produto> criterio) {
+        List<Produto> resultado = new ArrayList<>();
+        for (Produto produto : produtos) {
+            if (criterio.test(produto)) {
+                resultado.add(produto);
+            }
+        }
+        return resultado;
     }
 
     private BigDecimal calcularPercentual(int comprados, int total) {

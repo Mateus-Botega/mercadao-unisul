@@ -1,5 +1,7 @@
 package br.unisul.mercadao.structure;
 
+import java.util.function.Consumer;
+
 public class ArvoreBinariaBusca<K extends Comparable<K>, V> {
 
     private static class No<K, V> {
@@ -51,7 +53,7 @@ public class ArvoreBinariaBusca<K extends Comparable<K>, V> {
         return true;
     }
 
-    public void emOrdem(Acao<V> acao) {
+    public void emOrdem(Consumer<V> acao) {
         emOrdem(raiz, acao);
     }
 
@@ -106,12 +108,12 @@ public class ArvoreBinariaBusca<K extends Comparable<K>, V> {
         return atual;
     }
 
-    private void emOrdem(No<K, V> no, Acao<V> acao) {
+    private void emOrdem(No<K, V> no, Consumer<V> acao) {
         if (no == null) {
             return;
         }
         emOrdem(no.esquerda, acao);
-        acao.executar(no.valor);
+        acao.accept(no.valor);
         emOrdem(no.direita, acao);
     }
 }

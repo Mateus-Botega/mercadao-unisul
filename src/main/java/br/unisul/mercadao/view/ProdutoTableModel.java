@@ -2,10 +2,10 @@ package br.unisul.mercadao.view;
 
 import br.unisul.mercadao.i18n.I18n;
 import br.unisul.mercadao.model.Produto;
-import br.unisul.mercadao.structure.ListaDuplamenteEncadeada;
 import br.unisul.mercadao.util.Formatador;
 
 import javax.swing.table.AbstractTableModel;
+import java.util.List;
 
 final class ProdutoTableModel extends AbstractTableModel {
 
@@ -24,19 +24,19 @@ final class ProdutoTableModel extends AbstractTableModel {
     static final int COLUNA_STATUS = 10;
     private static final int TOTAL_COLUNAS = 11;
 
-    private final transient ListaDuplamenteEncadeada<Produto> produtos;
+    private final transient List<Produto> produtos;
 
-    ProdutoTableModel(ListaDuplamenteEncadeada<Produto> produtos) {
+    ProdutoTableModel(List<Produto> produtos) {
         this.produtos = produtos;
     }
 
     Produto getProduto(int linha) {
-        return produtos.obter(linha);
+        return produtos.get(linha);
     }
 
     @Override
     public int getRowCount() {
-        return produtos.tamanho();
+        return produtos.size();
     }
 
     @Override
@@ -69,7 +69,7 @@ final class ProdutoTableModel extends AbstractTableModel {
 
     @Override
     public Object getValueAt(int linha, int coluna) {
-        Produto produto = produtos.obter(linha);
+        Produto produto = produtos.get(linha);
         return switch (coluna) {
             case COLUNA_CODIGO -> String.valueOf(produto.getId());
             case COLUNA_NOME -> produto.getNome();

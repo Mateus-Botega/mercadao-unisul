@@ -25,7 +25,7 @@ MercadaoUnisul/
     │   │   ├── controller/         # Controle do menu
     │   │   ├── model/              # Produto, StatusProduto, ResumoFinanceiro
     │   │   ├── service/            # Regras de negócio e dados de exemplo
-    │   │   ├── structure/          # Lista duplamente encadeada e árvore binária de busca
+    │   │   ├── structure/          # Pilha (desfazer compra) e árvore binária de busca
     │   │   ├── view/               # Telas Swing
     │   │   ├── util/ i18n/ exception/
     │   └── resources/              # Ícones (icones/) e textos (i18n/mensagens_pt_BR.properties)

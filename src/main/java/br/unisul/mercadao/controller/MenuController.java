@@ -2,12 +2,13 @@ package br.unisul.mercadao.controller;
 
 import br.unisul.mercadao.exception.RegraNegocioException;
 import br.unisul.mercadao.i18n.I18n;
+import br.unisul.mercadao.model.CompraRegistrada;
 import br.unisul.mercadao.model.Produto;
 import br.unisul.mercadao.model.ResumoFinanceiro;
 import br.unisul.mercadao.service.DadosExemplo;
 import br.unisul.mercadao.service.ListaComprasService;
-import br.unisul.mercadao.structure.ListaDuplamenteEncadeada;
 import br.unisul.mercadao.util.Conversor;
+import br.unisul.mercadao.util.Formatador;
 import br.unisul.mercadao.view.ConsultaView;
 import br.unisul.mercadao.view.Dialogos;
 import br.unisul.mercadao.view.FormularioCompraView;
@@ -21,6 +22,7 @@ import br.unisul.mercadao.view.SeletorProdutoView;
 import br.unisul.mercadao.view.TelaBoasVindas;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 public class MenuController {
 
@@ -71,27 +73,29 @@ public class MenuController {
             case ADQUIRIDOS -> listarAdquiridos();
             case PENDENTES -> listarPendentes();
             case RESUMO -> exibirResumo();
+            case RESTAURAR_PRODUTO -> restaurarProdutoRemovido();
+            case DESFAZER_COMPRA -> desfazerUltimaCompra();
             case EXEMPLOS -> carregarExemplos();
         }
     }
 
     private void listarEmOrdemCadastro() {
-        ListaDuplamenteEncadeada<Produto> produtos = listaCompras.listarEmOrdemCadastro();
+        List<Produto> produtos = listaCompras.listarEmOrdemCadastro();
         exibirRelatorio(RelatorioView.Tipo.CADASTRO, produtos);
     }
 
     private void listarEmOrdemAlfabetica() {
-        ListaDuplamenteEncadeada<Produto> produtos = listaCompras.listarEmOrdemAlfabetica();
+        List<Produto> produtos = listaCompras.listarEmOrdemAlfabetica();
         exibirRelatorio(RelatorioView.Tipo.ALFABETICA, produtos);
     }
 
     private void listarAdquiridos() {
-        ListaDuplamenteEncadeada<Produto> produtos = listaCompras.listarComprados();
+        List<Produto> produtos = listaCompras.listarComprados();
         exibirRelatorio(RelatorioView.Tipo.ADQUIRIDOS, produtos);
     }
 
     private void listarPendentes() {
-        ListaDuplamenteEncadeada<Produto> produtos = listaCompras.listarPendentes();
+        List<Produto> produtos = listaCompras.listarPendentes();
         exibirRelatorio(RelatorioView.Tipo.PENDENTES, produtos);
     }
 
@@ -100,9 +104,33 @@ public class MenuController {
         ResumoView.exibir(resumo);
     }
 
-    private void exibirRelatorio(RelatorioView.Tipo tipo, ListaDuplamenteEncadeada<Produto> produtos) {
+    private void exibirRelatorio(RelatorioView.Tipo tipo, List<Produto> produtos) {
         ResumoFinanceiro resumo = listaCompras.calcularResumo(produtos);
         RelatorioView.exibir(tipo, produtos, resumo);
+    }
+
+    private void restaurarProdutoRemovido() {
+        Produto ultimo = listaCompras.espiarUltimoRemovido();
+        String pergunta = I18n.t("confirmacao.restaurar_produto", ultimo.getNome());
+        if (!Dialogos.confirmar(pergunta)) {
+            return;
+        }
+        Produto restaurado = listaCompras.restaurarUltimoRemovido();
+        String mensagem = I18n.t("sucesso.restaurado", restaurado.getNome(), String.valueOf(restaurado.getId()));
+        Dialogos.sucesso(mensagem);
+    }
+
+    private void desfazerUltimaCompra() {
+        CompraRegistrada ultima = listaCompras.espiarUltimaCompra();
+        String quantidadeUltima = Formatador.quantidade(ultima.quantidade());
+        String pergunta = I18n.t("confirmacao.desfazer_compra", ultima.produto().getNome(), quantidadeUltima);
+        if (!Dialogos.confirmar(pergunta)) {
+            return;
+        }
+        CompraRegistrada desfeita = listaCompras.desfazerUltimaCompra();
+        String quantidade = Formatador.quantidade(desfeita.quantidade());
+        String mensagem = I18n.t("sucesso.compra_desfeita", desfeita.produto().getNome(), quantidade);
+        Dialogos.sucesso(mensagem);
     }
 
     private void carregarExemplos() {
@@ -117,7 +145,7 @@ public class MenuController {
     }
 
     private void cadastrarProduto() {
-        ListaDuplamenteEncadeada<Produto> existentes = listaCompras.listarEmOrdemCadastro();
+        List<Produto> existentes = listaCompras.listarEmOrdemCadastro();
         FormularioProdutoView formulario = FormularioProdutoView.paraCadastro(existentes);
         boolean concluido = false;
         while (!concluido && formulario.exibir()) {
@@ -126,7 +154,7 @@ public class MenuController {
     }
 
     private void editarProduto() {
-        ListaDuplamenteEncadeada<Produto> existentes = listaCompras.listarEmOrdemCadastro();
+        List<Produto> existentes = listaCompras.listarEmOrdemCadastro();
         Produto escolhido = escolherProduto(OpcaoMenu.EDITAR, "selecao.editar", "aviso.lista_vazia", existentes);
         if (escolhido == null) {
             return;
@@ -139,7 +167,7 @@ public class MenuController {
     }
 
     private void removerProduto() {
-        ListaDuplamenteEncadeada<Produto> existentes = listaCompras.listarEmOrdemCadastro();
+        List<Produto> existentes = listaCompras.listarEmOrdemCadastro();
         Produto escolhido = escolherProduto(OpcaoMenu.REMOVER, "selecao.remover", "aviso.lista_vazia", existentes);
         if (escolhido == null) {
             return;
@@ -155,7 +183,7 @@ public class MenuController {
 
     private void registrarCompra(boolean compraTotal) {
         OpcaoMenu tipoDeCompra = compraTotal ? OpcaoMenu.COMPRA_TOTAL : OpcaoMenu.COMPRA_PARCIAL;
-        ListaDuplamenteEncadeada<Produto> pendentes = listaCompras.listarPendentes();
+        List<Produto> pendentes = listaCompras.listarPendentes();
         Produto escolhido = escolherProduto(tipoDeCompra, "selecao.comprar", "aviso.sem_pendentes", pendentes);
         if (escolhido == null) {
             return;
@@ -168,7 +196,7 @@ public class MenuController {
     }
 
     private Produto escolherProduto(OpcaoMenu finalidade, String chaveInstrucao, String chaveSemItens,
-                                    ListaDuplamenteEncadeada<Produto> opcoes) {
+                                    List<Produto> opcoes) {
         String instrucao = I18n.t(chaveInstrucao);
         String semItens = I18n.t(chaveSemItens);
         return SeletorProdutoView.escolher(finalidade, instrucao, semItens, opcoes);
@@ -196,22 +224,22 @@ public class MenuController {
 
     private void consultarPorCodigo(String texto) {
         int codigo = lerCodigo(texto);
-        ListaDuplamenteEncadeada<Produto> encontrados = listaCompras.listarPorId(codigo);
+        List<Produto> encontrados = listaCompras.listarPorId(codigo);
         exibirRelatorio(RelatorioView.Tipo.CONSULTA, encontrados);
     }
 
     private void consultarPorNome(String texto) {
-        ListaDuplamenteEncadeada<Produto> encontrados = listaCompras.listarPorNome(texto);
+        List<Produto> encontrados = listaCompras.listarPorNome(texto);
         exibirRelatorio(RelatorioView.Tipo.CONSULTA, encontrados);
     }
 
     private void consultarPorTrecho(String texto) {
-        ListaDuplamenteEncadeada<Produto> encontrados = listaCompras.buscarPorTrecho(texto);
+        List<Produto> encontrados = listaCompras.buscarPorTrecho(texto);
         exibirRelatorio(RelatorioView.Tipo.CONSULTA, encontrados);
     }
 
     private void consultarPorSecao(String texto) {
-        ListaDuplamenteEncadeada<Produto> encontrados = listaCompras.listarPorSecao(texto);
+        List<Produto> encontrados = listaCompras.listarPorSecao(texto);
         exibirRelatorio(RelatorioView.Tipo.CONSULTA, encontrados);
     }
 

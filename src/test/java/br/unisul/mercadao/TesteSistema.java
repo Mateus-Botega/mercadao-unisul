@@ -8,11 +8,12 @@ import br.unisul.mercadao.model.StatusProduto;
 import br.unisul.mercadao.service.DadosExemplo;
 import br.unisul.mercadao.service.ListaComprasService;
 import br.unisul.mercadao.structure.ArvoreBinariaBusca;
-import br.unisul.mercadao.structure.ListaDuplamenteEncadeada;
+import br.unisul.mercadao.structure.Pilha;
 import br.unisul.mercadao.util.Conversor;
 import br.unisul.mercadao.util.Formatador;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 public class TesteSistema {
 
@@ -24,7 +25,7 @@ public class TesteSistema {
     private static int totalDeFalhas = 0;
 
     public static void main(String[] args) {
-        testarLista();
+        testarPilha();
         testarArvore();
         testarCadastro();
         testarCompras();
@@ -33,7 +34,8 @@ public class TesteSistema {
         testarRemocao();
         testarBuscas();
         testarConsultasUnicas();
-        testarObter();
+        testarDesfazerCompra();
+        testarRestaurarProduto();
         testarI18n();
         testarConversor();
 
@@ -78,39 +80,47 @@ public class TesteSistema {
         return listaCompras.cadastrar(nome, secao, "un", decimal(quantidade), decimal(preco));
     }
 
-    private static void testarLista() {
-        System.out.println("== Lista duplamente encadeada ==");
-        ListaDuplamenteEncadeada<Integer> lista = new ListaDuplamenteEncadeada<>();
-        verificar("lista nova está vazia", lista.estaVazia() && lista.tamanho() == 0);
-        for (int numero = 1; numero <= 5; numero++) {
-            lista.adicionarNoFim(numero);
-        }
-        verificar("tamanho 5 após inserir 5", lista.tamanho() == 5);
-        verificar("ordem de inserção preservada", textoDaLista(lista).equals("1,2,3,4,5,"));
-        verificar("buscarPrimeiro encontra 3", lista.buscarPrimeiro(numero -> numero == 3) != null);
-        verificar("buscarPrimeiro não encontra 9", lista.buscarPrimeiro(numero -> numero == 9) == null);
-        verificar("filtrar pares gera 2,4", textoDaLista(lista.filtrar(numero -> numero % 2 == 0)).equals("2,4,"));
-        verificar("remover inexistente retorna null", lista.removerPrimeiro(numero -> numero == 9) == null);
-        verificar("remover do início", lista.removerPrimeiro(numero -> numero == 1) != null
-                && textoDaLista(lista).equals("2,3,4,5,"));
-        verificar("remover do meio", lista.removerPrimeiro(numero -> numero == 3) != null
-                && textoDaLista(lista).equals("2,4,5,"));
-        verificar("remover do fim", lista.removerPrimeiro(numero -> numero == 5) != null
-                && textoDaLista(lista).equals("2,4,"));
-        lista.adicionarNoFim(7);
-        verificar("inserir após remover o fim mantém encadeamento", textoDaLista(lista).equals("2,4,7,"));
-        lista.removerPrimeiro(numero -> numero == 2);
-        lista.removerPrimeiro(numero -> numero == 4);
-        verificar("remover até restar um", lista.tamanho() == 1 && textoDaLista(lista).equals("7,"));
-        verificar("remover o único elemento", lista.removerPrimeiro(numero -> numero == 7) != null && lista.estaVazia());
-        lista.adicionarNoFim(8);
-        verificar("lista reutilizável após esvaziar", lista.tamanho() == 1 && textoDaLista(lista).equals("8,"));
+    private static void testarPilha() {
+        System.out.println("== Pilha ==");
+        Pilha<Integer> pilha = new Pilha<>();
+        verificar("pilha nova vazia", pilha.estaVazia() && pilha.tamanho() == 0
+                && pilha.desempilhar() == null && pilha.espiar() == null);
+        pilha.empilhar(1);
+        pilha.empilhar(2);
+        pilha.empilhar(3);
+        verificar("tamanho 3 e topo 3", pilha.tamanho() == 3 && pilha.espiar() == 3);
+        verificar("desempilha em ordem inversa (LIFO)", pilha.desempilhar() == 3 && pilha.desempilhar() == 2);
+        pilha.empilhar(9);
+        verificar("empilhar após desempilhar", pilha.espiar() == 9 && pilha.tamanho() == 2);
+        pilha.desempilhar();
+        pilha.desempilhar();
+        verificar("esvaziar pilha", pilha.estaVazia() && pilha.desempilhar() == null);
     }
 
-    private static String textoDaLista(ListaDuplamenteEncadeada<Integer> lista) {
-        StringBuilder texto = new StringBuilder();
-        lista.paraCada(numero -> texto.append(numero).append(','));
-        return texto.toString();
+    private static void testarDesfazerCompra() {
+        System.out.println("== Desfazer última compra (pilha) ==");
+        ListaComprasService listaCompras = new ListaComprasService();
+        Produto arroz = cadastrarProduto(listaCompras, "Arroz", "Mercearia", "4", "10");
+        Produto feijao = cadastrarProduto(listaCompras, "Feijão", "Mercearia", "2", "8");
+        verificarRejeita("sem compras não há o que desfazer", listaCompras::desfazerUltimaCompra);
+        listaCompras.comprar(arroz.getId(), decimal("1"), decimal("9.5"));
+        listaCompras.comprarTotal(feijao.getId(), decimal("7"));
+        listaCompras.comprar(arroz.getId(), decimal("2"), decimal("11"));
+        verificar("espiar mostra a compra mais recente sem remover", listaCompras.espiarUltimaCompra().produto() == arroz
+                && listaCompras.espiarUltimaCompra().produto() == arroz);
+        listaCompras.desfazerUltimaCompra();
+        verificar("desfaz primeiro a compra mais recente (arroz 2)",
+                igual(arroz.getQuantidadeComprada(), "1") && igual(arroz.getValorGasto(), "9.50")
+                        && arroz.getStatus() == StatusProduto.PARCIAL);
+        listaCompras.desfazerUltimaCompra();
+        verificar("desfaz a compra total do feijão",
+                igual(feijao.getQuantidadeComprada(), "0") && igual(feijao.getValorGasto(), "0")
+                        && feijao.getStatus() == StatusProduto.PENDENTE);
+        listaCompras.desfazerUltimaCompra();
+        verificar("desfaz a primeira compra e produto volta a ser removível",
+                igual(arroz.getQuantidadeComprada(), "0") && !arroz.possuiCompra());
+        verificarRejeita("pilha esgotada", listaCompras::desfazerUltimaCompra);
+        verificar("resumo volta a zero gasto", igual(listaCompras.calcularResumo().getValorGasto(), "0"));
     }
 
     private static void testarArvore() {
@@ -295,7 +305,7 @@ public class TesteSistema {
         verificar("remoção sem compra tira da lista",
                 listaCompras.buscarPorId(feijao.getId()) == null && listaCompras.tamanho() == 1);
         verificar("remoção sem compra tira do índice", listaCompras.buscarPorNome("Feijão") == null);
-        verificar("ordem alfabética sem o removido", listaCompras.listarEmOrdemAlfabetica().tamanho() == 1);
+        verificar("ordem alfabética sem o removido", listaCompras.listarEmOrdemAlfabetica().size() == 1);
         verificarRejeita("remover inexistente", () -> listaCompras.remover(feijao.getId()));
         Produto feijaoNovo = cadastrarProduto(listaCompras, "Feijão", "Mercearia", "1", "6");
         verificar("id não é reutilizado (3)", feijaoNovo.getId() == 3);
@@ -311,28 +321,32 @@ public class TesteSistema {
         Produto leite = cadastrarProduto(listaCompras, "Leite Integral", "Laticínios", "1", "4");
 
         verificar("busca por nome exato ignora acento/caixa", listaCompras.buscarPorNome(" MACA ") != null);
-        verificar("busca por trecho ignora acento/caixa", listaCompras.buscarPorTrecho("MAC").tamanho() == 1);
-        verificar("busca por trecho 'a' encontra todos com 'a'", listaCompras.buscarPorTrecho("a").tamanho() == 4);
-        verificar("busca por trecho sem resultado", listaCompras.buscarPorTrecho("zzz").estaVazia());
+        verificar("busca por trecho ignora acento/caixa", listaCompras.buscarPorTrecho("MAC").size() == 1);
+        verificar("busca por trecho 'a' encontra todos com 'a'", listaCompras.buscarPorTrecho("a").size() == 4);
+        verificar("busca por trecho sem resultado", listaCompras.buscarPorTrecho("zzz").isEmpty());
         verificarRejeita("trecho vazio rejeitado", () -> listaCompras.buscarPorTrecho("   "));
-        verificar("seção ignora acento/caixa", listaCompras.listarPorSecao("HORTIFRUTI").tamanho() == 3);
-        verificar("seção de laticínios", listaCompras.listarPorSecao("laticinios").tamanho() == 1
-                && listaCompras.listarPorSecao("laticinios").buscarPrimeiro(produto -> true) == leite);
-        verificar("seção inexistente", listaCompras.listarPorSecao("padaria").estaVazia());
+        verificar("seção ignora acento/caixa", listaCompras.listarPorSecao("HORTIFRUTI").size() == 3);
+        verificar("seção de laticínios", listaCompras.listarPorSecao("laticinios").size() == 1
+                && listaCompras.listarPorSecao("laticinios").get(0) == leite);
+        verificar("seção inexistente", listaCompras.listarPorSecao("padaria").isEmpty());
 
         StringBuilder codigosEmOrdemDeCadastro = new StringBuilder();
-        listaCompras.listarEmOrdemCadastro().paraCada(produto -> codigosEmOrdemDeCadastro.append(produto.getId()));
+        for (Produto produto : listaCompras.listarEmOrdemCadastro()) {
+            codigosEmOrdemDeCadastro.append(produto.getId());
+        }
         verificar("ordem de cadastro 1234", codigosEmOrdemDeCadastro.toString().equals("1234"));
         StringBuilder codigosEmOrdemAlfabetica = new StringBuilder();
-        listaCompras.listarEmOrdemAlfabetica().paraCada(produto -> codigosEmOrdemAlfabetica.append(produto.getId()));
+        for (Produto produto : listaCompras.listarEmOrdemAlfabetica()) {
+            codigosEmOrdemAlfabetica.append(produto.getId());
+        }
         verificar("ordem alfabética (Abacate, Banana, Leite, Maçã) = 3142",
                 codigosEmOrdemAlfabetica.toString().equals("3142"));
 
         listaCompras.comprar(leite.getId(), decimal("0.5"), decimal("4"));
-        verificar("adquiridos inclui parcial", listaCompras.listarComprados().tamanho() == 1);
-        verificar("pendentes inclui parcial e pendentes", listaCompras.listarPendentes().tamanho() == 4);
+        verificar("adquiridos inclui parcial", listaCompras.listarComprados().size() == 1);
+        verificar("pendentes inclui parcial e pendentes", listaCompras.listarPendentes().size() == 4);
         listaCompras.comprarTotal(leite.getId(), decimal("4"));
-        verificar("pendentes exclui comprados", listaCompras.listarPendentes().tamanho() == 3);
+        verificar("pendentes exclui comprados", listaCompras.listarPendentes().size() == 3);
         verificar("dados de exemplo inserem e não duplicam",
                 DadosExemplo.carregar(listaCompras) > 0 && DadosExemplo.carregar(listaCompras) == 0);
     }
@@ -344,20 +358,18 @@ public class TesteSistema {
         Produto feijao = cadastrarProduto(listaCompras, "Feijão", "Mercearia", "1", "8");
 
         verificar("listarPorId encontrado devolve 1 item",
-                listaCompras.listarPorId(arroz.getId()).tamanho() == 1
-                        && listaCompras.listarPorId(arroz.getId()).buscarPrimeiro(produto -> true) == arroz);
-        verificar("listarPorId inexistente devolve lista vazia", listaCompras.listarPorId(99).estaVazia());
-        verificar("listarPorNome ignora acento e caixa", listaCompras.listarPorNome(" FEIJAO ").tamanho() == 1);
-        verificar("listarPorNome inexistente devolve lista vazia", listaCompras.listarPorNome("zzz").estaVazia());
+                listaCompras.listarPorId(arroz.getId()).size() == 1
+                        && listaCompras.listarPorId(arroz.getId()).get(0) == arroz);
+        verificar("listarPorId inexistente devolve lista vazia", listaCompras.listarPorId(99).isEmpty());
+        verificar("listarPorNome ignora acento e caixa", listaCompras.listarPorNome(" FEIJAO ").size() == 1);
+        verificar("listarPorNome inexistente devolve lista vazia", listaCompras.listarPorNome("zzz").isEmpty());
 
-        ListaDuplamenteEncadeada<Produto> copia = listaCompras.listarEmOrdemCadastro();
-        verificar("copia mantém tamanho e ordem", copia.tamanho() == 2 && copia.obter(0) == arroz
-                && copia.obter(1) == feijao);
-        copia.adicionarNoFim(arroz);
+        List<Produto> copia = listaCompras.listarEmOrdemCadastro();
+        verificar("copia mantém tamanho e ordem", copia.size() == 2 && copia.get(0) == arroz
+                && copia.get(1) == feijao);
+        copia.add(arroz);
         verificar("alterar a cópia não altera a lista original", listaCompras.tamanho() == 2
-                && listaCompras.listarEmOrdemCadastro().tamanho() == 2);
-        verificar("comUmElemento cria lista de 1 item",
-                ListaDuplamenteEncadeada.comUmElemento(7).tamanho() == 1);
+                && listaCompras.listarEmOrdemCadastro().size() == 2);
 
         verificar("produto novo: sem compra e falta comprar", !arroz.possuiCompra() && arroz.faltaComprar());
         listaCompras.comprar(arroz.getId(), decimal("1"), decimal("10"));
@@ -369,26 +381,30 @@ public class TesteSistema {
                         && Produto.calcularValor(decimal("1.5"), decimal("0.33")).scale() == 2);
     }
 
-    private static void testarObter() {
-        System.out.println("== Lista: obter(int) ==");
-        ListaDuplamenteEncadeada<Integer> lista = new ListaDuplamenteEncadeada<>();
-        for (int indice = 0; indice < 7; indice++) {
-            lista.adicionarNoFim(indice * 10);
-        }
-        boolean todosCorretos = true;
-        for (int indice = 0; indice < 7; indice++) {
-            todosCorretos = todosCorretos && lista.obter(indice) == indice * 10;
-        }
-        verificar("obter devolve cada posição (início e fim da lista)", todosCorretos);
-        boolean rejeitou = false;
-        try {
-            lista.obter(7);
-        } catch (IndexOutOfBoundsException excecao) {
-            rejeitou = true;
-        }
-        verificar("obter fora do limite lança IndexOutOfBoundsException", rejeitou);
-        lista.removerPrimeiro(numero -> numero == 30);
-        verificar("obter após remoção no meio", lista.obter(3) == 40 && lista.obter(5) == 60);
+    private static void testarRestaurarProduto() {
+        System.out.println("== Restaurar produto removido (pilha) ==");
+        ListaComprasService listaCompras = new ListaComprasService();
+        Produto arroz = cadastrarProduto(listaCompras, "Arroz", "Mercearia", "1", "10");
+        Produto feijao = cadastrarProduto(listaCompras, "Feijão", "Mercearia", "1", "8");
+        Produto leite = cadastrarProduto(listaCompras, "Leite", "Laticínios", "1", "5");
+        verificarRejeita("sem remoções não há o que restaurar", listaCompras::restaurarUltimoRemovido);
+        listaCompras.remover(arroz.getId());
+        listaCompras.remover(feijao.getId());
+        verificar("espiar mostra o último removido", listaCompras.espiarUltimoRemovido() == feijao);
+        verificar("removidos somem da lista e do índice", listaCompras.tamanho() == 1
+                && listaCompras.buscarPorNome("Arroz") == null);
+        listaCompras.restaurarUltimoRemovido();
+        verificar("restaura primeiro o último removido, com mesmo código e nome na árvore",
+                listaCompras.buscarPorId(feijao.getId()) == feijao && listaCompras.buscarPorNome("Feijão") == feijao);
+        listaCompras.restaurarUltimoRemovido();
+        List<Produto> ordem = listaCompras.listarEmOrdemCadastro();
+        verificar("ordem de cadastro preservada após restaurar", ordem.size() == 3 && ordem.get(0) == arroz
+                && ordem.get(1) == feijao && ordem.get(2) == leite);
+        verificarRejeita("pilha de removidos esgotada", listaCompras::restaurarUltimoRemovido);
+        listaCompras.remover(arroz.getId());
+        cadastrarProduto(listaCompras, "Arroz", "Mercearia", "1", "10");
+        verificarRejeita("não restaura se o nome foi reutilizado", listaCompras::restaurarUltimoRemovido);
+        verificar("removido continua na pilha após falha", listaCompras.espiarUltimoRemovido() == arroz);
     }
 
     private static void testarI18n() {

@@ -98,6 +98,11 @@ public class Produto {
         valorGasto = valorGasto.add(calcularValor(quantidade, precoUnitarioPago));
     }
 
+    public void desfazerCompra(BigDecimal quantidade, BigDecimal precoUnitarioPago) {
+        quantidadeComprada = quantidadeComprada.subtract(quantidade);
+        valorGasto = valorGasto.subtract(calcularValor(quantidade, precoUnitarioPago));
+    }
+
     public void setNome(String nome) {
         this.nome = nome;
     }
